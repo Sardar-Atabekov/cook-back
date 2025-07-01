@@ -3,6 +3,7 @@ import authRoutes from './auth';
 
 const router = Router();
 
+router.use('/auth', authRoutes);
 router.use('/user', authRoutes);
 router.get('/test', (req, res) => res.json({ ok: true }));
 

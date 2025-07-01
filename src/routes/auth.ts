@@ -1,11 +1,13 @@
 import express from 'express';
-import User from '../models/user';
+import { users } from '../models/user';
+import { db } from '../db';
 import {
   hashPassword,
   comparePasswords,
   generateToken,
 } from '../services/auth';
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
 
 const router = express.Router();
 
@@ -14,23 +16,40 @@ const loginSchema = z.object({
   password: z.string().min(6),
 });
 
-const registerSchema = loginSchema;
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  name: z.string().min(1),
+});
 
-router.post('/user', async (req, res) => {
+router.post('/signup', async (req, res) => {
   try {
-    const { email, password } = registerSchema.parse(req.body);
-    const exists = await User.findOne({ email });
+    const { email, password, name } = registerSchema.parse(req.body);
+
+    // Проверка на существование пользователя
+    const exists = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .then((r) => r[0]);
     if (exists) return res.status(400).json({ error: 'Email already exists' });
 
     const hashed = await hashPassword(password);
-    const newUser = await User.create({ email, password: hashed });
-    const token = generateToken({ id: newUser.id, email });
+
+    // Создание пользователя
+    const [newUser] = await db
+      .insert(users)
+      .values({ name, email, password: hashed })
+      .returning();
+
+    const token = generateToken({ id: String(newUser.id), email });
 
     res.status(201).json({
       token,
       user: {
         id: newUser.id,
-        email: email,
+        email: newUser.email,
+        name: newUser.name,
         lastLogin: new Date(),
       },
       expiresIn: '7d',
@@ -41,53 +60,65 @@ router.post('/user', async (req, res) => {
   }
 });
 
-router.post('/auth', async (req: express.Request, res: express.Response) => {
+router.post('/login', async (req, res) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
 
-    const user = await User.findOne({ email });
+    // Поиск пользователя
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .then((r) => r[0]);
     if (!user) {
       return res.status(401).json({
         error: 'Invalid credentials',
         details: 'User with this email not found',
       });
     }
-
-    console.log('user', user);
     if (user.isLocked) {
       return res.status(403).json({
         error: 'Account is locked',
         details: 'Contact support to unlock your account',
       });
     }
-
     const match = await comparePasswords(password, user.password);
     if (!match) {
-      user.failedLoginAttempts += 1;
+      const failedLoginAttempts = user.failedLoginAttempts + 1;
+      let isLocked = user.isLocked;
 
-      if (user.failedLoginAttempts >= 100) {
-        user.isLocked = true;
-        await user.save();
+      if (failedLoginAttempts >= 100) {
+        isLocked = true;
+      }
+
+      // Обновление попыток и блокировки
+      await db
+        .update(users)
+        .set({ failedLoginAttempts, isLocked })
+        .where(eq(users.id, user.id));
+
+      if (isLocked) {
         return res.status(403).json({
           error: 'Account temporarily locked',
           details: 'Too many failed login attempts',
         });
       }
 
-      await user.save();
       return res.status(401).json({
         error: 'Invalid credentials',
         details: 'Incorrect password',
-        attemptsLeft: 100 - user.failedLoginAttempts,
+        attemptsLeft: 100 - failedLoginAttempts,
       });
     }
 
-    user.failedLoginAttempts = 0;
-    user.lastLogin = new Date();
-    await user.save();
+    // Сброс попыток и обновление времени входа
+    await db
+      .update(users)
+      .set({ failedLoginAttempts: 0, lastLogin: new Date() })
+      .where(eq(users.id, user.id));
 
     const token = generateToken({
-      id: user.id,
+      id: String(user.id),
       email: user.email,
     });
 
@@ -96,29 +127,20 @@ router.post('/auth', async (req: express.Request, res: express.Response) => {
       user: {
         id: user.id,
         email: user.email,
-        lastLogin: user.lastLogin,
+        lastLogin: new Date(),
       },
       expiresIn: '7d',
     });
   } catch (err) {
     console.error('Login error:', err);
 
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Validation error',
-        details: err.errors.map((e) => ({
-          field: e.path.join('.'),
-          message: e.message,
-        })),
-      });
-    }
-
+    // Добавьте это для подробного вывода
     res.status(500).json({
       error: 'Server error',
-      details: 'An unexpected error occurred during login',
+      details: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
     });
   }
 });
 
-export { loginSchema };
 export default router;

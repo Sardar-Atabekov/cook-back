@@ -5,48 +5,32 @@ import { defineConfig } from 'eslint-define-config';
 import importPlugin from 'eslint-plugin-import';
 import prettierPlugin from 'eslint-plugin-prettier';
 import promisePlugin from 'eslint-plugin-promise';
-import reactPlugin from 'eslint-plugin-react';
-import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 const isProd = process.env.NODE_ENV === 'production';
 
 const cleanGlobals = Object.fromEntries(
   Object.entries({
-    ...globals.browser,
     ...globals.node,
   }).map(([k, v]) => [k.trim(), v])
 );
 
 export default defineConfig([
   {
-    ignores: [
-      'node_modules/',
-      'dist/',
-      'build/',
-      '.next/',
-      'out/',
-      'coverage/',
-      'dest/',
-      '**/*.d.ts',
-    ],
+    ignores: ['node_modules/', 'dist/', 'build/', 'coverage/', '**/*.d.ts'],
   },
 
-  // Основной конфиг
+  // Основной конфиг для backend
   {
-    files: ['**/*.{js,jsx,ts,tsx}'],
+    files: ['**/*.{js,ts}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
       parser: tseslintParser,
-      parserOptions: {
-        ecmaFeatures: { jsx: true },
-      },
+      parserOptions: {},
       globals: cleanGlobals,
     },
     plugins: {
-      react: reactPlugin,
-      'react-hooks': reactHooksPlugin,
       import: importPlugin,
       promise: promisePlugin,
       prettier: prettierPlugin,
@@ -55,18 +39,12 @@ export default defineConfig([
     rules: {
       // Стандарты
       ...js.configs.recommended.rules,
-      ...reactPlugin.configs.recommended.rules,
-      ...reactHooksPlugin.configs.recommended.rules,
       ...tseslintPlugin.configs.recommended.rules,
       ...promisePlugin.configs.recommended.rules,
       ...prettierPlugin.configs.recommended.rules,
 
       // Prettier
       'prettier/prettier': ['error', {}, { usePrettierrc: true }],
-
-      // React
-      'react/react-in-jsx-scope': 'off',
-      'react/prop-types': 'off',
 
       // TypeScript
       '@typescript-eslint/no-unused-vars': [
@@ -99,7 +77,6 @@ export default defineConfig([
       ],
     },
     settings: {
-      react: { version: 'detect' },
       'import/resolver': {
         typescript: {
           project: './tsconfig.json',
@@ -110,7 +87,7 @@ export default defineConfig([
 
   // Тесты
   {
-    files: ['**/*.test.{js,jsx,ts,tsx}', 'config/*.js'],
+    files: ['**/*.test.{js,ts}', 'config/*.js'],
     languageOptions: {
       globals: {
         ...cleanGlobals,
@@ -124,14 +101,7 @@ export default defineConfig([
 
   // Node.js конфиги
   {
-    files: [
-      '*.js',
-      '*.cjs',
-      '*.mjs',
-      '*.config.js',
-      '*.config.ts',
-      'vite.config.ts',
-    ],
+    files: ['*.js', '*.cjs', '*.mjs', '*.config.js', '*.config.ts'],
     languageOptions: {
       globals: {
         ...cleanGlobals,

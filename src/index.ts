@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import apiRouter from './routes/index';
 import { corsMiddleware } from './config/cors';
+import { storage } from './storage';
 
 dotenv.config();
 
@@ -49,8 +50,9 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 const port = process.env.PORT || 5000;
-app.listen(port, () => {
+app.listen(port, async () => {
   console.log(`Serving on port ${port}`);
+  await storage.seedData();
 });
 
 export { app };

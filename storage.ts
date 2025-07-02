@@ -69,21 +69,23 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getIngredients(): Promise<
-    (Ingredient & { category: IngredientCategory })[]
+    (Ingredient & { category: Pick<IngredientCategory, 'id' | 'name'> })[]
   > {
-    return await db
+    const rows = await db
       .select()
       .from(ingredients)
       .leftJoin(
         ingredientCategories,
         eq(ingredients.categoryId, ingredientCategories.id)
-      )
-      .then((rows) =>
-        rows.map((row) => ({
-          ...row.ingredients,
-          category: row.ingredient_categories!,
-        }))
       );
+
+    return rows.map((row) => ({
+      ...row.ingredients,
+      category: {
+        id: row.ingredient_categories?.id,
+        name: row.ingredient_categories?.name,
+      },
+    }));
   }
 
   async getIngredientsByCategory(): Promise<

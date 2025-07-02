@@ -1,6 +1,6 @@
 import express from 'express';
 import { users } from '../models/user';
-import { db } from '../db';
+import { db } from '../storage/db';
 import {
   hashPassword,
   comparePasswords,

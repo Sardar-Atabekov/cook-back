@@ -7,7 +7,7 @@ import {
   type RecipeWithIngredients,
   type RecipeIngredient,
   type SavedRecipe,
-} from '@/models/schema';
+} from '@/models';
 import { db } from './db';
 import { eq, inArray, sql, and } from 'drizzle-orm';
 

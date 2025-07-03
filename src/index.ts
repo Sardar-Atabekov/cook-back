@@ -38,7 +38,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Подключаем роуты
 app.use('/api', apiRouter);
 
 // Глобальный обработчик ошибок
@@ -51,8 +50,13 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
 
 const port = process.env.PORT || 5000;
 app.listen(port, async () => {
-  console.log(`Serving on port ${port}`);
-  await runSeed();
+  console.log(`🚀 Server is running on http://localhost:${port}`);
+  try {
+    await runSeed();
+    console.log('🌱 Database seeded successfully');
+  } catch (err) {
+    console.error('❌ Failed to seed database');
+  }
 });
 
 export { app };

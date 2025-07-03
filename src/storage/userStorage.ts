@@ -1,5 +1,5 @@
 import { db } from '@/storage/db';
-import { users, type User, type InsertUser } from '@/models/schema';
+import { users, type User, type InsertUser } from '@/models';
 import { eq } from 'drizzle-orm';
 
 export const userStorage = {

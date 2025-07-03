@@ -8,10 +8,44 @@ if (!process.env.POSTGRES_URI) {
   throw new Error('Missing POSTGRES_URI in environment');
 }
 
-const client = new Client({
-  connectionString: process.env.POSTGRES_URI,
-});
+let client: Client;
+let db: ReturnType<typeof drizzle>;
 
-await client.connect();
+async function connectWithRetry(retries = 5, delay = 2000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      client = new Client({
+        connectionString: process.env.POSTGRES_URI,
+      });
 
-export const db = drizzle(client);
+      client.on('error', async (err) => {
+        console.error('Postgres connection error:', err);
+        // Попытка переподключения
+        await reconnect();
+      });
+
+      await client.connect();
+      db = drizzle(client);
+      console.log('Postgres connected');
+      return;
+    } catch (err) {
+      console.error(`Postgres connect failed (attempt ${i + 1}):`, err);
+      if (i < retries - 1) {
+        await new Promise((res) => setTimeout(res, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+async function reconnect() {
+  try {
+    await client.end().catch(() => {});
+  } catch {}
+  await connectWithRetry();
+}
+
+await connectWithRetry();
+
+export { db };

@@ -2,28 +2,24 @@ import { db } from '@/storage/db';
 import {
   ingredients,
   ingredientCategories,
-  type Ingredient as DbIngredient,
-  type IngredientCategory as DbIngredientCategory,
+  ingredientCategoryTranslations,
+  ingredientTranslations,
 } from '@/models';
-import { eq, sql, or } from 'drizzle-orm';
-import { TranslationUtils } from '../utils/translation';
+import { eq, and, ilike, sql } from 'drizzle-orm';
+
+// Типы
 import { InferSelectModel } from 'drizzle-orm';
 
-// Определяем типы, которые будут использоваться в API
 export type IngredientCategory = InferSelectModel<typeof ingredientCategories>;
 export type Ingredient = InferSelectModel<typeof ingredients>;
 
-export type TranslatedIngredientCategory = Omit<
-  IngredientCategory,
-  'names' | 'descriptions'
-> & {
+export type TranslatedIngredientCategory = IngredientCategory & {
   name: string;
   description?: string;
 };
 
-export type TranslatedIngredient = Omit<Ingredient, 'names' | 'aliases'> & {
+export type TranslatedIngredient = Ingredient & {
   name: string;
-  aliases?: string[];
 };
 
 export type IngredientWithTranslatedCategory = TranslatedIngredient & {
@@ -31,7 +27,7 @@ export type IngredientWithTranslatedCategory = TranslatedIngredient & {
 };
 
 export type GroupedIngredients = {
-  id: string;
+  id: number;
   name: string;
   ingredients: TranslatedIngredient[];
 }[];
@@ -40,19 +36,27 @@ export const ingredientStorage = {
   async getIngredientCategories(
     language: string
   ): Promise<TranslatedIngredientCategory[]> {
-    const categories = await db.select().from(ingredientCategories);
-    return categories.map((cat) => ({
-      id: cat.id,
-      parentId: cat.parentId,
-      level: cat.level,
-      sortOrder: cat.sortOrder,
-      isActive: cat.isActive,
-      createdAt: cat.createdAt,
-      updatedAt: cat.updatedAt,
-      name: TranslationUtils.getTranslatedText(cat.names, language),
-      description: cat.descriptions
-        ? TranslationUtils.getTranslatedText(cat.descriptions, language)
-        : undefined,
+    const rows = await db
+      .select({
+        category: ingredientCategories,
+        translation: ingredientCategoryTranslations,
+      })
+      .from(ingredientCategories)
+      .leftJoin(
+        ingredientCategoryTranslations,
+        and(
+          eq(
+            ingredientCategoryTranslations.categoryId,
+            ingredientCategories.id
+          ),
+          eq(ingredientCategoryTranslations.language, language)
+        )
+      );
+
+    return rows.map((row) => ({
+      ...row.category,
+      name: row.translation?.name ?? 'Unknown',
+      description: row.translation?.description ?? undefined,
     }));
   },
 
@@ -62,136 +66,106 @@ export const ingredientStorage = {
     const rows = await db
       .select({
         ingredient: ingredients,
+        ingredientTranslation: ingredientTranslations,
         category: ingredientCategories,
+        categoryTranslation: ingredientCategoryTranslations,
       })
       .from(ingredients)
       .leftJoin(
+        ingredientTranslations,
+        and(
+          eq(ingredientTranslations.ingredientId, ingredients.id),
+          eq(ingredientTranslations.language, language)
+        )
+      )
+      .leftJoin(
         ingredientCategories,
         eq(ingredients.categoryId, ingredientCategories.id)
+      )
+      .leftJoin(
+        ingredientCategoryTranslations,
+        and(
+          eq(
+            ingredientCategoryTranslations.categoryId,
+            ingredientCategories.id
+          ),
+          eq(ingredientCategoryTranslations.language, language)
+        )
       );
 
-    return rows
-      .filter((row) => row.category)
-      .map((row) => ({
-        id: row.ingredient.id,
-        categoryId: row.ingredient.categoryId,
-        primaryName: row.ingredient.primaryName,
-        externalId: row.ingredient.externalId,
-        isActive: row.ingredient.isActive,
-        createdAt: row.ingredient.createdAt,
-        updatedAt: row.ingredient.updatedAt,
-        lastSyncAt: row.ingredient.lastSyncAt,
-        name: TranslationUtils.getTranslatedText(
-          row.ingredient.names,
-          language
-        ),
-        aliases: row.ingredient.aliases
-          ? (Object.values(row.ingredient.aliases).flat() as string[])
-          : undefined,
-        nutritionalData: row.ingredient.nutritionalData,
-        category: {
-          id: row.category!.id,
-          name: TranslationUtils.getTranslatedText(
-            row.category!.names,
-            language
-          ),
-        },
-      }));
+    return rows.map((row) => ({
+      ...row.ingredient,
+      name: row.ingredientTranslation?.name ?? 'Unknown',
+      category: {
+        id: row.category?.id ?? -1,
+        name: row.categoryTranslation?.name ?? 'Unknown',
+      },
+    }));
   },
 
   async searchIngredients(
     query: string,
     language: string
   ): Promise<TranslatedIngredient[]> {
-    const searchConditions = TranslationUtils.createMultilingualSearchCondition(
-      ingredients.names,
-      query,
-      [language, 'en'] // Ищем сначала на запрошенном языке, потом на английском
-    );
-
-    const searchAliasConditions =
-      TranslationUtils.createMultilingualSearchCondition(
-        ingredients.aliases,
-        query,
-        [language, 'en']
-      );
-
-    const result = await db
-      .select()
+    const rows = await db
+      .select({
+        ingredient: ingredients,
+        translation: ingredientTranslations,
+      })
       .from(ingredients)
-      .where(or(searchConditions, searchAliasConditions));
+      .leftJoin(
+        ingredientTranslations,
+        and(
+          eq(ingredientTranslations.ingredientId, ingredients.id),
+          eq(ingredientTranslations.language, language)
+        )
+      )
+      .where(ilike(ingredientTranslations.name, `%${query}%`));
 
-    return result.map((ing) => ({
-      id: ing.id,
-      categoryId: ing.categoryId,
-      primaryName: ing.primaryName,
-      externalId: ing.externalId,
-      isActive: ing.isActive,
-      createdAt: ing.createdAt,
-      updatedAt: ing.updatedAt,
-      lastSyncAt: ing.lastSyncAt,
-      name: TranslationUtils.getTranslatedText(ing.names, language),
-      aliases: ing.aliases
-        ? (Object.values(ing.aliases).flat() as string[])
-        : undefined,
-      nutritionalData: ing.nutritionalData,
+    return rows.map((row) => ({
+      ...row.ingredient,
+      name: row.translation?.name ?? 'Unknown',
     }));
   },
 
   async getIngredientsByCategory(
-    categoryId: string,
+    categoryId: number,
     language: string
   ): Promise<TranslatedIngredient[]> {
-    const result = await db
-      .select()
+    const rows = await db
+      .select({
+        ingredient: ingredients,
+        translation: ingredientTranslations,
+      })
       .from(ingredients)
+      .leftJoin(
+        ingredientTranslations,
+        and(
+          eq(ingredientTranslations.ingredientId, ingredients.id),
+          eq(ingredientTranslations.language, language)
+        )
+      )
       .where(eq(ingredients.categoryId, categoryId));
 
-    return result.map((ing) => ({
-      id: ing.id,
-      categoryId: ing.categoryId,
-      primaryName: ing.primaryName,
-      externalId: ing.externalId,
-      isActive: ing.isActive,
-      createdAt: ing.createdAt,
-      updatedAt: ing.updatedAt,
-      lastSyncAt: ing.lastSyncAt,
-      name: TranslationUtils.getTranslatedText(ing.names, language),
-      aliases: ing.aliases
-        ? (Object.values(ing.aliases).flat() as string[])
-        : undefined,
-      nutritionalData: ing.nutritionalData,
+    return rows.map((row) => ({
+      ...row.ingredient,
+      name: row.translation?.name ?? 'Unknown',
     }));
   },
 
   async getGroupedIngredientsByCategory(
     language: string
-  ): Promise<GroupedIngredients[]> {
-    const categories = await db.select().from(ingredientCategories);
-    const allIngredients = await db.select().from(ingredients);
+  ): Promise<GroupedIngredients> {
+    const categories =
+      await ingredientStorage.getIngredientCategories(language);
+    const allIngredients = await ingredientStorage.getAllIngredients(language);
 
-    const grouped = categories.map((category) => ({
+    return categories.map((category) => ({
       id: category.id,
-      name: TranslationUtils.getTranslatedText(category.names as any, language),
-      ingredients: allIngredients
-        .filter((ing) => ing.categoryId === category.id)
-        .map((ing) => ({
-          id: ing.id,
-          categoryId: ing.categoryId,
-          primaryName: ing.primaryName,
-          externalId: ing.externalId,
-          isActive: ing.isActive,
-          createdAt: ing.createdAt,
-          updatedAt: ing.updatedAt,
-          lastSyncAt: ing.lastSyncAt,
-          name: TranslationUtils.getTranslatedText(ing.names, language),
-          aliases: ing.aliases
-            ? (Object.values(ing.aliases).flat() as string[])
-            : undefined,
-          nutritionalData: ing.nutritionalData,
-        })),
+      name: category.name,
+      ingredients: allIngredients.filter(
+        (ing) => ing.categoryId === category.id
+      ),
     }));
-
-    return grouped;
   },
 };

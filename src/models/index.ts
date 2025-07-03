@@ -5,7 +5,8 @@ export * from './schema/ingredients';
 export * from './schema/saved-recipes';
 export * from './schema/recipe-ingredients';
 export * from './schema/ingredient-categories';
-
+export * from './schema/ingredient_category_translations'
+export * from './schema/ingredient_translations'
 // Zod schemas
 export * from './zod/index';
 

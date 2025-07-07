@@ -1,4 +1,12 @@
-import { pgTable, serial, integer, text } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  serial,
+  integer,
+  text,
+  timestamp,
+  boolean,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 import { ingredientCategories } from './ingredient-categories';
 
 export const ingredientCategoryTranslations = pgTable(
@@ -11,5 +19,11 @@ export const ingredientCategoryTranslations = pgTable(
     language: text('language').notNull(),
     name: text('name').notNull(),
     description: text('description'),
-  }
+  },
+  (table) => ({
+    unq: uniqueIndex('category_language_unq').on(
+      table.categoryId,
+      table.language
+    ),
+  })
 );

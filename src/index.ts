@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import apiRouter from './routes/index';
 import { corsMiddleware } from './config/cors';
-import { runSeed } from './storage';
+// import { runSeed } from './storage';
 
 dotenv.config();
 
@@ -52,7 +52,7 @@ const port = process.env.PORT || 5000;
 app.listen(port, async () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
   try {
-    await runSeed();
+    // await runSeed();
     console.log('🌱 Database seeded successfully');
   } catch (err) {
     console.error('❌ Failed to seed database');

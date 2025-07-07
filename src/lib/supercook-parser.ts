@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { db } from '@/storage/db';
 import {
   ingredientCategories,
@@ -7,195 +6,135 @@ import {
   ingredientTranslations,
 } from '@/models';
 import { eq } from 'drizzle-orm';
+import axios from 'axios';
 
-interface SupercookIngredientRaw {
-  term?: string;
-  display_name: string;
-}
-interface SupercookCategoryRaw {
-  group_name: string;
-  ingredients: SupercookIngredientRaw[] | { ingredients: string[] };
-}
-
-interface SupercookIngredient {
-  term: string;
-  display_name: string;
-}
-interface SupercookCategory {
-  group_name: string;
-  ingredients: SupercookIngredient[];
-}
-
-type SupercookApiResponse = Record<
-  string,
-  SupercookIngredientRaw[] | { ingredients: string[] }
->;
-
-async function fetchSupercookData(
-  language: string = 'ru'
-): Promise<SupercookCategory[]> {
+/** Получаем массив категорий с API */
+async function fetchSupercookData(language = 'ru') {
   const url = 'https://d1.supercook.com/dyn/lang_ings';
-  const headers = {
-    Accept: 'application/json, text/plain, */*',
-    'User-Agent':
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64 ) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-  };
   const payload = new URLSearchParams({ lang: language, cv: '2' }).toString();
-
-  const response = await axios.post<SupercookApiResponse>(url, payload, {
-    headers,
+  const response = await axios.post(url, payload, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
   });
-
-  return Object.entries(response.data).map(([group_name, rawItems]) => {
-    // Normalize ingredients array
-    let items: SupercookIngredientRaw[] = [];
-    if (Array.isArray(rawItems)) {
-      items = rawItems;
-    } else if (
-      'ingredients' in rawItems &&
-      Array.isArray(rawItems.ingredients)
-    ) {
-      items = rawItems.ingredients.map(
-        (name) => ({ display_name: name }) as SupercookIngredientRaw
-      );
-    }
-    // Convert to uniform type
-    const ingredients: SupercookIngredient[] = items.map((item) => ({
-      term: item.term?.trim() || item.display_name.trim(),
-      display_name: item.display_name.trim(),
-    }));
-
-    return { group_name, ingredients };
-  });
+  // The API returns an array directly, not an object with a 'data' key
+  const data = Array.isArray(response.data) ? response.data : response.data;
+  return data;
 }
 
-export async function syncSupercookIngredients(language: string) {
+export async function syncSupercookIngredients(language: string | undefined) {
   if (!language) return;
-  const apiCategories = await fetchSupercookData(language);
-
-  // Load existing data
-  const existingCats = await db.select().from(ingredientCategories);
-  const 
-   = await db.select().from(ingredients);
-
-  const catMap = new Map<string, number>();
-  existingCats.forEach((cat) => catMap.set(cat.primaryName, cat.id));
-
-  const ingMap = new Map<string, number>();
-  existingIngs.forEach((ing) => ingMap.set(ing.primaryName, ing.id));
-
-  const newCategories: Array<Partial<typeof ingredientCategories._type>> = [];
-  const newCategoryTrans: Array<
-    Partial<typeof ingredientCategoryTranslations._type>
-  > = [];
-  const newIngredientsArr: Array<Partial<typeof ingredients._type>> = [];
-  const newIngTrans: Array<Partial<typeof ingredientTranslations._type>> = [];
-
-  for (const cat of apiCategories) {
-    const key = cat.group_name.toLowerCase();
-    let catId = catMap.get(key);
-    if (!catId) {
-      // create new category
-      const insert = {
-        primaryName: cat.group_name,
-        isActive: true,
-        parentId: null,
-        level: 0,
-        sortOrder: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      newCategories.push(insert);
-      // Drizzle serial key will be assigned, but we need id for translations; we can insert categories first
-      // Use placeholder, will re-query after insert
-    }
-  }
+  const apiData = await fetchSupercookData(language);
 
   await db.transaction(async (tx) => {
-    // Insert categories and fetch with ids
-    if (newCategories.length) {
-      await tx.insert(ingredientCategories).values(newCategories);
-    }
-    const updatedCats = await tx.select().from(ingredientCategories);
-    catMap.clear();
-    updatedCats.forEach((cat) =>
-      catMap.set(cat.primaryName.toLowerCase(), cat.id)
-    );
+    // 1) Insert categories if not exist and get their IDs
+    const categoryIds = new Map();
+    for (const item of apiData) {
+      const name = item.group_name.trim();
+      const icon = item.icon; // Get icon from the API response
+      let categoryId;
 
-    // Build translations and ingredients after categories exist
-    for (const cat of apiCategories) {
-      const catId = catMap.get(cat.group_name.toLowerCase());
-      if (!catId) {
-        console.error('Не найден catId для категории:', cat.group_name);
-        continue;
-      }
-      newCategoryTrans.push({
-        categoryId: catId,
-        language,
-        name: cat.group_name,
-      });
-      // ingredients
-      for (const ing of cat.ingredients) {
-        const ik = ing.term.toLowerCase();
-        let ingId = ingMap.get(ik);
-        if (!ingId) {
-          const insertIng = {
-            categoryId: catId,
-            primaryName: ing.term,
+      // First, try to find the category by its translation name for the given language
+      const existingTranslation = await tx
+        .select()
+        .from(ingredientCategoryTranslations)
+        .where(eq(ingredientCategoryTranslations.name, name))
+        .limit(1);
+
+      if (existingTranslation.length > 0) {
+        categoryId = existingTranslation[0].categoryId;
+      } else {
+        // If no translation exists, insert a new category
+        const insertedCategory = await tx
+          .insert(ingredientCategories)
+          .values({
+            parentId: null,
+            level: 0,
+            sortOrder: 0,
             isActive: true,
+            icon: icon, // Include icon when inserting new category
             createdAt: new Date(),
             updatedAt: new Date(),
-            lastSyncAt: new Date(),
-          };
-          newIngredientsArr.push(insertIng);
+          })
+          .returning({ id: ingredientCategories.id });
+        categoryId = insertedCategory[0].id;
+
+        // Insert the translation for the new category
+        await tx
+          .insert(ingredientCategoryTranslations)
+          .values({ categoryId: categoryId, language, name, description: null })
+          .onConflictDoUpdate({
+            target: [
+              ingredientCategoryTranslations.categoryId,
+              ingredientCategoryTranslations.language,
+            ],
+            set: { name: name, description: null },
+          });
+      }
+      categoryIds.set(name.toLowerCase(), categoryId);
+    }
+
+    // 2) Process ingredients
+    for (const item of apiData) {
+      const categoryName = item.group_name.trim();
+      const catId = categoryIds.get(categoryName.toLowerCase());
+      if (!catId) continue;
+      console.log('item', item);
+      for (const display of item.ingredients) {
+        const term = display.trim();
+        let ingredientId;
+
+        // Try to find existing ingredient by primaryName
+        const existingIngredient = await tx
+          .select()
+          .from(ingredients)
+          .where(eq(ingredients.primaryName, term))
+          .limit(1);
+
+        if (existingIngredient.length > 0) {
+          ingredientId = existingIngredient[0].id;
+        } else {
+          // Insert new ingredient record
+          const insertedIngredient = await tx
+            .insert(ingredients)
+            .values({
+              categoryId: catId,
+              primaryName: term,
+              isActive: true,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+              lastSyncAt: new Date(),
+            })
+            .returning({ id: ingredients.id });
+          ingredientId = insertedIngredient[0].id;
         }
+
+        // Insert ingredient translation
+        await tx
+          .insert(ingredientTranslations)
+          .values({ ingredientId: ingredientId, language, name: term })
+          .onConflictDoUpdate({
+            target: [
+              ingredientTranslations.ingredientId,
+              ingredientTranslations.language,
+            ],
+            set: { name: term },
+          });
       }
     }
-
-    if (newIngredientsArr.length) {
-      await tx.insert(ingredients).values(newIngredientsArr);
-    }
-    const updatedIngs = await tx.select().from(ingredients);
-    ingMap.clear();
-    updatedIngs.forEach((ing) =>
-      ingMap.set(ing.primaryName.toLowerCase(), ing.id)
-    );
-
-    // Now insert translations
-    const catTransserts = newCategoryTrans.map((t) => ({
-      categoryId: t.categoryId!,
-      language: t.language!,
-      name: t.name!,
-      description: t.description || null,
-    }));
-    await tx.insert(ingredientCategoryTranslations).values(catTransserts);
-
-    for (const cat of apiCategories) {
-      const cid = catMap.get(cat.group_name.toLowerCase())!;
-      for (const ing of cat.ingredients) {
-        const term = ing.term?.trim() || ing.display_name?.trim();
-        if (!term) {
-          console.error('Ингредиент без имени:', ing);
-          continue; // или задайте уникальное значение по умолчанию
-        }
-        const ik = term.toLowerCase();
-        let ingId = ingMap.get(ik);
-        if (!ingId) {
-          const insertIng = {
-            categoryId: catId,
-            primaryName: term,
-            isActive: true,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            lastSyncAt: new Date(),
-          };
-          newIngredientsArr.push(insertIng);
-        }
-      }
-    }
-    if (newIngTrans.length)
-      await tx.insert(ingredientTranslations).values(newIngTrans);
   });
 
-  console.log('Синхронизация завершена');
+  console.log('Синхронизация Supercook завершена');
 }
+
+// async function main() {
+//   try {
+//     // Use 'ru' for Russian language based on the provided example
+//     await syncSupercookIngredients('ru');
+//     console.log('Data import process finished.');
+//   } catch (error) {
+//     console.error('An error occurred during the data import process:', error);
+//   } finally {
+//     await pool.end();
+//   }
+// }
+
+// main();

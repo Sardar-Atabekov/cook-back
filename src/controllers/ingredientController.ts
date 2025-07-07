@@ -44,7 +44,6 @@ export async function getGroupedIngredients(req: Request, res: Response) {
   try {
     const language = (req.query.lang as string) || 'en';
     console.log(language);
-    await syncSupercookIngredients(language);
     const data = await ingredientStorage.getGroupedIngredientsByCategory(language);
     res.json(data);
   } catch (error) {

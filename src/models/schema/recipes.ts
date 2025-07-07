@@ -1,4 +1,11 @@
-import { pgTable, serial, text, integer, jsonb, timestamp } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  serial,
+  text,
+  integer,
+  jsonb,
+  timestamp,
+} from 'drizzle-orm/pg-core';
 
 export const recipes = pgTable('recipes', {
   id: serial('id').primaryKey(),
@@ -10,5 +17,6 @@ export const recipes = pgTable('recipes', {
   imageUrl: text('image_url'),
   instructions: jsonb('instructions'),
   sourceUrl: text('source_url'),
+  supercookId: text('supercook_id').notNull().unique(),
   createdAt: timestamp('created_at').defaultNow(),
 });

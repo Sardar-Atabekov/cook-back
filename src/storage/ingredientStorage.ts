@@ -7,15 +7,15 @@ import {
 } from '@/models';
 import { eq, and, ilike, sql } from 'drizzle-orm';
 
-// Типы
-import { InferSelectModel } from 'drizzle-orm';
+import type { InferSelectModel } from 'drizzle-orm';
 
 export type IngredientCategory = InferSelectModel<typeof ingredientCategories>;
 export type Ingredient = InferSelectModel<typeof ingredients>;
 
 export type TranslatedIngredientCategory = IngredientCategory & {
   name: string;
-  description?: string;
+  description?: string | null;
+  icon?: string | null;
 };
 
 export type TranslatedIngredient = Ingredient & {
@@ -23,7 +23,7 @@ export type TranslatedIngredient = Ingredient & {
 };
 
 export type IngredientWithTranslatedCategory = TranslatedIngredient & {
-  category: Pick<TranslatedIngredientCategory, 'id' | 'name'>;
+  category: Pick<TranslatedIngredientCategory, 'id' | 'name' | 'icon'>;
 };
 
 export type GroupedIngredients = {
@@ -32,6 +32,7 @@ export type GroupedIngredients = {
   ingredients: TranslatedIngredient[];
 }[];
 
+// Основной объект с методами
 export const ingredientStorage = {
   async getIngredientCategories(
     language: string
@@ -42,21 +43,19 @@ export const ingredientStorage = {
         translation: ingredientCategoryTranslations,
       })
       .from(ingredientCategories)
-      .leftJoin(
+      .innerJoin(
         ingredientCategoryTranslations,
-        and(
-          eq(
-            ingredientCategoryTranslations.categoryId,
-            ingredientCategories.id
-          ),
-          eq(ingredientCategoryTranslations.language, language)
-        )
+        sql`${ingredientCategoryTranslations.categoryId} = ${ingredientCategories.id} AND ${ingredientCategoryTranslations.language} = ${language}`
       );
 
-    return rows.map((row) => ({
-      ...row.category,
-      name: row.translation?.name ?? 'Unknown',
-      description: row.translation?.description ?? undefined,
+    if (!rows.length) {
+      console.warn(`No translations found for language: ${language}`);
+    }
+    return rows.map(({ category, translation }) => ({
+      ...category,
+      name: translation.name,
+      description: translation.description ?? null,
+      icon: category.icon ?? null,
     }));
   },
 
@@ -93,14 +92,22 @@ export const ingredientStorage = {
         )
       );
 
-    return rows.map((row) => ({
-      ...row.ingredient,
-      name: row.ingredientTranslation?.name ?? 'Unknown',
-      category: {
-        id: row.category?.id ?? -1,
-        name: row.categoryTranslation?.name ?? 'Unknown',
-      },
-    }));
+    return rows.map(
+      ({
+        ingredient,
+        ingredientTranslation,
+        category,
+        categoryTranslation,
+      }) => ({
+        ...ingredient,
+        name: ingredientTranslation?.name ?? ingredient.primaryName,
+        category: {
+          id: category?.id ?? -1,
+          name: categoryTranslation?.name ?? 'Unknown',
+          icon: category?.icon ?? null,
+        },
+      })
+    );
   },
 
   async searchIngredients(
@@ -122,9 +129,9 @@ export const ingredientStorage = {
       )
       .where(ilike(ingredientTranslations.name, `%${query}%`));
 
-    return rows.map((row) => ({
-      ...row.ingredient,
-      name: row.translation?.name ?? 'Unknown',
+    return rows.map(({ ingredient, translation }) => ({
+      ...ingredient,
+      name: translation?.name ?? 'Unknown',
     }));
   },
 
@@ -147,15 +154,16 @@ export const ingredientStorage = {
       )
       .where(eq(ingredients.categoryId, categoryId));
 
-    return rows.map((row) => ({
-      ...row.ingredient,
-      name: row.translation?.name ?? 'Unknown',
+    return rows.map(({ ingredient, translation }) => ({
+      ...ingredient,
+      name: translation?.name ?? 'Unknown11',
     }));
   },
 
   async getGroupedIngredientsByCategory(
     language: string
   ): Promise<GroupedIngredients> {
+    // Получаем категории и ингредиенты отдельно
     const categories =
       await ingredientStorage.getIngredientCategories(language);
     const allIngredients = await ingredientStorage.getAllIngredients(language);

@@ -8,10 +8,9 @@ import {
   jsonb,
 } from 'drizzle-orm/pg-core';
 import { ingredientCategories } from './ingredient-categories';
-
 export const ingredients = pgTable('ingredients', {
   id: serial('id').primaryKey(),
-  categoryId: integer('category_id').references(() => ingredientCategories.id),
+  categoryId: integer('category_id').references(() => ingredientCategories.id, { onDelete: 'cascade' }),
   primaryName: text('primary_name').notNull(),
   isActive: boolean('is_active').default(true),
   aliases: jsonb('aliases'),

@@ -15,12 +15,14 @@ export const recipeStorage = {
   async getRecipes(
     ingredientIds: number[],
     limit: number,
-    offset: number
+    offset: number,
+    lang: string
   ): Promise<RecipeWithIngredients[]> {
     if (ingredientIds.length === 0) {
       const recipesResult = await db
         .select()
         .from(recipes)
+        .where(eq(recipes.lang, lang))
         .limit(limit)
         .offset(offset);
 
@@ -55,7 +57,12 @@ export const recipeStorage = {
       })
       .from(recipes)
       .innerJoin(recipeIngredients, eq(recipes.id, recipeIngredients.recipeId))
-      .where(inArray(recipeIngredients.ingredientId, ingredientIds))
+      .where(
+        and(
+          eq(recipes.lang, lang),
+          inArray(recipeIngredients.ingredientId, ingredientIds)
+        )
+      )
       .groupBy(recipes.id)
       .orderBy(sql`COUNT(DISTINCT ${recipeIngredients.ingredientId}) DESC`)
       .limit(limit)
@@ -85,8 +92,15 @@ export const recipeStorage = {
     }));
   },
 
-  async getRecipeById(id: number): Promise<RecipeWithIngredients | undefined> {
-    const [recipe] = await db.select().from(recipes).where(eq(recipes.id, id));
+  async getRecipeById(
+    id: number,
+    lang: string
+  ): Promise<RecipeWithIngredients | undefined> {
+    const [recipe] = await db
+      .select()
+      .from(recipes)
+      .where(and(eq(recipes.id, id), eq(recipes.lang, lang)));
+
     if (!recipe) return undefined;
 
     const recipeIngredientsResult = await db
@@ -110,11 +124,13 @@ export const recipeStorage = {
     };
   },
 
-  async searchRecipes(query: string): Promise<Recipe[]> {
+  async searchRecipes(query: string, lang: string): Promise<Recipe[]> {
     return await db
       .select()
       .from(recipes)
-      .where(sql`${recipes.title} ILIKE ${`%${query}%`}`);
+      .where(
+        and(sql`${recipes.title} ILIKE ${`%${query}%`}`, eq(recipes.lang, lang))
+      );
   },
 
   async saveRecipe(userId: number, recipeId: number): Promise<SavedRecipe> {
@@ -136,12 +152,15 @@ export const recipeStorage = {
       );
   },
 
-  async getUserSavedRecipes(userId: number): Promise<RecipeWithIngredients[]> {
+  async getUserSavedRecipes(
+    userId: number,
+    lang: string
+  ): Promise<RecipeWithIngredients[]> {
     const savedRecipesResult = await db
       .select({ recipe: recipes })
       .from(savedRecipes)
       .innerJoin(recipes, eq(savedRecipes.recipeId, recipes.id))
-      .where(eq(savedRecipes.userId, userId));
+      .where(and(eq(savedRecipes.userId, userId), eq(recipes.lang, lang)));
 
     const recipeIds = savedRecipesResult.map((sr) => sr.recipe.id);
     if (recipeIds.length === 0) return [];
@@ -167,5 +186,29 @@ export const recipeStorage = {
           ingredient: ri.ingredient,
         })),
     }));
+  },
+
+  async countRecipes(ingredientIds: number[], lang: string): Promise<number> {
+    if (ingredientIds.length === 0) {
+      const [{ count }] = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(recipes)
+        .where(eq(recipes.lang, lang));
+
+      return count;
+    }
+
+    const [{ count }] = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${recipes.id})` })
+      .from(recipes)
+      .innerJoin(recipeIngredients, eq(recipes.id, recipeIngredients.recipeId))
+      .where(
+        and(
+          eq(recipes.lang, lang),
+          inArray(recipeIngredients.ingredientId, ingredientIds)
+        )
+      );
+
+    return count;
   },
 };

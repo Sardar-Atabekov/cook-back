@@ -4,6 +4,7 @@ import {
   ingredients,
   recipes,
   recipeIngredients,
+  parsedIngredients,
 } from '@/models';
 import { syncSupercookIngredients } from '@/lib/supercook-parser';
 
@@ -17,9 +18,8 @@ export async function runSeed() {
     //   return;
     // }
     await db.delete(recipeIngredients);
+    await db.delete(parsedIngredients);
     await db.delete(recipes);
-    await db.delete(ingredients);
-    await db.delete(ingredientCategories);
     // const categoryData = [
     //   {
     //     names: 'Pantry Essentials',
@@ -137,7 +137,6 @@ export async function runSeed() {
     // const insertedIngredients = await db.select().from(ingredients);
     // console.log(`✅ Inserted ${insertedIngredients.length} ingredients.`);
 
-    
     // 4. Insert sample recipes
     const sampleRecipes = [
       {

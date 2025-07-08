@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import dotenv from 'dotenv';
 import apiRouter from './routes/index';
 import { corsMiddleware } from './config/cors';
-// import { runSeed } from './storage';
+import { runSeed } from './storage';
 
 dotenv.config();
 

@@ -12,7 +12,9 @@ export async function getRecipes(req: Request, res: Response) {
     } = req.query;
 
     if (!lang || typeof lang !== 'string') {
-      return res.status(400).json({ message: 'Missing or invalid "lang" parameter' });
+      return res
+        .status(400)
+        .json({ message: 'Missing or invalid "lang" parameter' });
     }
 
     const parsedLimit = Math.max(parseInt(limit as string), 1);
@@ -35,6 +37,7 @@ export async function getRecipes(req: Request, res: Response) {
       });
     }
 
+    console.log("ingredientIds", ingredientIds)
     // Получение рецептов (limit + 1 — для определения hasMore)
     const recipes = await recipeStorage.getRecipes(
       ingredientIds,
@@ -63,9 +66,7 @@ export async function getRecipes(req: Request, res: Response) {
       ).length;
 
       const matchPercentage =
-        totalRequired > 0
-          ? Math.round((matchCount / totalRequired) * 100)
-          : 0;
+        totalRequired > 0 ? Math.round((matchCount / totalRequired) * 100) : 0;
 
       const missingIngredients = recipe.recipeIngredients
         .filter((ri) => ri.required && !ingredientIds.includes(ri.ingredientId))
@@ -89,14 +90,15 @@ export async function getRecipes(req: Request, res: Response) {
   }
 }
 
-
 export async function getRecipeById(req: Request, res: Response) {
   try {
     const id = parseInt(req.params.id);
     const lang = req.query.lang;
 
     if (!lang || typeof lang !== 'string') {
-      return res.status(400).json({ message: 'Missing or invalid "lang" parameter' });
+      return res
+        .status(400)
+        .json({ message: 'Missing or invalid "lang" parameter' });
     }
 
     const recipe = await recipeStorage.getRecipeById(id, lang);
@@ -110,4 +112,3 @@ export async function getRecipeById(req: Request, res: Response) {
     res.status(500).json({ message: 'Failed to fetch recipe' });
   }
 }
-

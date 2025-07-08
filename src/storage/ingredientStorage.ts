@@ -110,6 +110,7 @@ export const ingredientStorage = {
     );
   },
 
+  
   async searchIngredients(
     query: string,
     language: string

@@ -4,7 +4,6 @@ import {
   ingredients,
   recipes,
   recipeIngredients,
-  parsedIngredients,
 } from '@/models';
 import { syncSupercookIngredients } from '@/lib/supercook-parser';
 
@@ -18,7 +17,8 @@ export async function runSeed() {
     //   return;
     // }
     await db.delete(recipeIngredients);
-    await db.delete(parsedIngredients);
+    await db.delete(ingredientCategories);
+    await db.delete(ingredients);
     await db.delete(recipes);
     // const categoryData = [
     //   {

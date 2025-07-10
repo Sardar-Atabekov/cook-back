@@ -6,20 +6,20 @@ import {
   recipeIngredients,
 } from '@/models';
 import { syncSupercookIngredients } from '@/lib/supercook-parser';
+import { sql } from 'drizzle-orm';
 
 // Запускаем полную синхронизацию для русского языка
 
 export async function runSeed() {
   try {
-    const existingCategories = await db.select().from(ingredientCategories);
-    // if (existingCategories.length > 0) {
-    //   console.log('⚠️ Seed already exists. Skipping.');
-    //   return;
-    // }
-    await db.delete(recipeIngredients);
-    await db.delete(ingredientCategories);
-    await db.delete(ingredients);
-    await db.delete(recipes);
+    // Удаляет все таблицы полностью (не просто очистка, а дроп)
+    const tables = await db.execute<{ tablename: string }>(
+      sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
+    );
+    const tableRows = tables.rows ?? tables; // Support both QueryResult and array
+    for (const { tablename } of tableRows) {
+      await db.execute(sql.raw(`DROP TABLE IF EXISTS "${tablename}" CASCADE`));
+    }
     // const categoryData = [
     //   {
     //     names: 'Pantry Essentials',
@@ -138,58 +138,58 @@ export async function runSeed() {
     // console.log(`✅ Inserted ${insertedIngredients.length} ingredients.`);
 
     // 4. Insert sample recipes
-    const sampleRecipes = [
-      {
-        title: 'Classic French Toast',
-        description:
-          'Perfect breakfast with a crispy exterior and custardy center',
-        prepTime: 15,
-        servings: 4,
-        difficulty: 'Easy',
-        imageUrl:
-          'https://images.unsplash.com/photo-1484723091739-30a097e8f929?auto=format&fit=crop&w=400&h=300',
-        instructions: [
-          'Beat eggs with milk and cinnamon',
-          'Dip bread slices',
-          'Cook in buttered pan',
-          'Serve with syrup',
-        ],
-      },
-      {
-        title: 'Perfect Scrambled Eggs',
-        description: 'Creamy, restaurant-quality scrambled eggs',
-        prepTime: 5,
-        servings: 2,
-        difficulty: 'Easy',
-        imageUrl:
-          'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=400&h=300',
-        instructions: [
-          'Beat eggs',
-          'Heat butter',
-          'Stir eggs continuously',
-          'Remove slightly wet',
-        ],
-      },
-      {
-        title: 'Fresh Egg Pasta',
-        description: 'Silky homemade pasta with flour and eggs',
-        prepTime: 45,
-        servings: 4,
-        difficulty: 'Medium',
-        imageUrl:
-          'https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=400&h=300',
-        instructions: [
-          'Make well',
-          'Add eggs',
-          'Mix and knead',
-          'Roll and cut',
-        ],
-      },
-    ];
+    // const sampleRecipes = [
+    //   {
+    //     title: 'Classic French Toast',
+    //     description:
+    //       'Perfect breakfast with a crispy exterior and custardy center',
+    //     prepTime: 15,
+    //     servings: 4,
+    //     difficulty: 'Easy',
+    //     imageUrl:
+    //       'https://images.unsplash.com/photo-1484723091739-30a097e8f929?auto=format&fit=crop&w=400&h=300',
+    //     instructions: [
+    //       'Beat eggs with milk and cinnamon',
+    //       'Dip bread slices',
+    //       'Cook in buttered pan',
+    //       'Serve with syrup',
+    //     ],
+    //   },
+    //   {
+    //     title: 'Perfect Scrambled Eggs',
+    //     description: 'Creamy, restaurant-quality scrambled eggs',
+    //     prepTime: 5,
+    //     servings: 2,
+    //     difficulty: 'Easy',
+    //     imageUrl:
+    //       'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=400&h=300',
+    //     instructions: [
+    //       'Beat eggs',
+    //       'Heat butter',
+    //       'Stir eggs continuously',
+    //       'Remove slightly wet',
+    //     ],
+    //   },
+    //   {
+    //     title: 'Fresh Egg Pasta',
+    //     description: 'Silky homemade pasta with flour and eggs',
+    //     prepTime: 45,
+    //     servings: 4,
+    //     difficulty: 'Medium',
+    //     imageUrl:
+    //       'https://images.unsplash.com/photo-1551183053-bf91a1d81141?auto=format&fit=crop&w=400&h=300',
+    //     instructions: [
+    //       'Make well',
+    //       'Add eggs',
+    //       'Mix and knead',
+    //       'Roll and cut',
+    //     ],
+    //   },
+    // ];
 
-    await db.insert(recipes).values(sampleRecipes);
-    const insertedRecipes = await db.select().from(recipes);
-    console.log(`✅ Inserted ${insertedRecipes.length} recipes.`);
+    // await db.insert(recipes).values(sampleRecipes);
+    // const insertedRecipes = await db.select().from(recipes);
+    // console.log(`✅ Inserted ${insertedRecipes.length} recipes.`);
 
     // // 5. Insert ingredients into recipes
     // const ingredientId = (name: string) => {

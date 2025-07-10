@@ -8,21 +8,23 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { ingredients } from './ingredients';
+import { ingredientCategories } from './ingredient-categories';
 
-export const ingredientTranslations = pgTable(
-  'ingredient_translations',
+export const ingredientCategoryLinks = pgTable(
+  'ingredient_category_links',
   {
     id: serial('id').primaryKey(),
     ingredientId: integer('ingredient_id')
       .notNull()
       .references(() => ingredients.id, { onDelete: 'cascade' }),
-    language: text('language').notNull(),
-    name: text('name').notNull(),
+    categoryId: integer('category_id')
+      .notNull()
+      .references(() => ingredientCategories.id, { onDelete: 'cascade' }),
   },
   (table) => ({
-    unq: uniqueIndex('ingredient_language_unq').on(
+    unq_ingredient_category: uniqueIndex('unique_ingredient_category').on(
       table.ingredientId,
-      table.language
+      table.categoryId
     ),
   })
 );

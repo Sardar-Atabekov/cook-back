@@ -5,7 +5,8 @@ import { syncSupercookIngredients } from '@/lib/supercook-parser';
 export async function getCategories(req: Request, res: Response) {
   try {
     const language = (req.query.language as string) || 'en';
-    const categories = await ingredientStorage.getIngredientCategories(language);
+    const categories =
+      await ingredientStorage.getIngredientCategories(language);
     res.json(categories);
   } catch (error) {
     console.error('Failed to fetch categories:', error);
@@ -44,7 +45,7 @@ export async function getGroupedIngredients(req: Request, res: Response) {
   try {
     const language = (req.query.lang as string) || 'en';
     console.log(language);
-    const data = await ingredientStorage.getGroupedIngredientsByCategory(language);
+    const data = await ingredientStorage.getFullIngredientTree(language);
     res.json(data);
   } catch (error) {
     console.error('Failed to fetch grouped ingredients:', error);

@@ -37,7 +37,6 @@ export async function getRecipes(req: Request, res: Response) {
       });
     }
 
-    console.log("ingredientIds", ingredientIds)
     // Получение рецептов (limit + 1 — для определения hasMore)
     const recipes = await recipeStorage.getRecipes(
       ingredientIds,
@@ -51,7 +50,7 @@ export async function getRecipes(req: Request, res: Response) {
 
     // Получение общего количества (для фронта — пагинация, индикаторы и т.п.)
     const total = await recipeStorage.countRecipes(ingredientIds, lang);
-
+    console.log('recipes', recipes);
     const recipesWithMatch = limitedRecipes.map((recipe) => {
       const recipeIngredientIds = recipe.recipeIngredients.map(
         (ri) => ri.ingredientId

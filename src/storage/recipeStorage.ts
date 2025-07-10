@@ -18,16 +18,10 @@ export const recipeStorage = {
     offset: number,
     lang: string
   ): Promise<RecipeWithIngredients[]> {
-    if (ingredientIds.length === 0) {
-      const recipesResult = await db
-        .select()
-        .from(recipes)
-        .where(eq(recipes.lang, lang))
-        .limit(limit)
-        .offset(offset);
+    const getIngredientsForRecipes = async (recipeIds: number[]) => {
+      if (recipeIds.length === 0) return [];
 
-      const recipeIds = recipesResult.map((r) => r.id);
-      const recipeIngredientsResult = await db
+      return await db
         .select({
           recipeIngredient: recipeIngredients,
           ingredient: ingredients,
@@ -38,16 +32,41 @@ export const recipeStorage = {
           eq(recipeIngredients.ingredientId, ingredients.id)
         )
         .where(inArray(recipeIngredients.recipeId, recipeIds));
+    };
 
-      return recipesResult.map((recipe) => ({
-        ...recipe,
-        recipeIngredients: recipeIngredientsResult
+    if (ingredientIds.length === 0) {
+      const recipesResult = await db
+        .select()
+        .from(recipes)
+        .where(eq(recipes.lang, lang))
+        .limit(limit)
+        .offset(offset);
+
+      const recipeIds = recipesResult.map((r) => r.id);
+      const recipeIngredientsResult = await getIngredientsForRecipes(recipeIds);
+
+      console.log('Recipes (with filter):', recipesResult.length);
+      console.log('Ingredients):', recipeIngredientsResult);
+      const recipeIngredientsResult2 = await db
+        .select()
+        .from(recipeIngredients)
+        .where(inArray(recipeIngredients.recipeId, [22, 23]));
+
+      console.log('recipeIngredientsRаlt2', recipeIngredientsResult2);
+
+      return recipesResult.map((recipe) => {
+        const recipeIngr = recipeIngredientsResult
           .filter((ri) => ri.recipeIngredient.recipeId === recipe.id)
           .map((ri) => ({
             ...ri.recipeIngredient,
             ingredient: ri.ingredient,
-          })),
-      }));
+          }));
+
+        return {
+          ...recipe,
+          recipeIngredients: recipeIngr,
+        };
+      });
     }
 
     const recipesResult = await db
@@ -69,29 +88,31 @@ export const recipeStorage = {
       .offset(offset);
 
     const recipeIds = recipesResult.map((r) => r.recipe.id);
-    const recipeIngredientsResult = await db
-      .select({
-        recipeIngredient: recipeIngredients,
-        ingredient: ingredients,
-      })
-      .from(recipeIngredients)
-      .innerJoin(
-        ingredients,
-        eq(recipeIngredients.ingredientId, ingredients.id)
-      )
-      .where(inArray(recipeIngredients.recipeId, recipeIds));
+    const recipeIngredientsResult = await getIngredientsForRecipes(recipeIds);
 
-    return recipesResult.map(({ recipe }) => ({
-      ...recipe,
-      recipeIngredients: recipeIngredientsResult
+    console.log('Recipes (with filter):', recipesResult.length);
+    console.log('Ingredients):', recipeIngredientsResult);
+    const recipeIngredientsResult2 = await db
+      .select()
+      .from(recipeIngredients)
+      .where(inArray(recipeIngredients.recipeId, [22, 23]));
+
+    console.log('recipeIngredientsResult2', recipeIngredientsResult2);
+
+    return recipesResult.map(({ recipe }) => {
+      const recipeIngr = recipeIngredientsResult
         .filter((ri) => ri.recipeIngredient.recipeId === recipe.id)
         .map((ri) => ({
           ...ri.recipeIngredient,
           ingredient: ri.ingredient,
-        })),
-    }));
-  },
+        }));
 
+      return {
+        ...recipe,
+        recipeIngredients: recipeIngr,
+      };
+    });
+  },
   async getRecipeById(
     id: number,
     lang: string

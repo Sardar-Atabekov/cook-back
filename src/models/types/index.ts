@@ -16,9 +16,13 @@ export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
 export type SavedRecipe = typeof savedRecipes.$inferSelect;
 
 export type RecipeWithIngredients = Recipe & {
-  recipeIngredients: (RecipeIngredient & {
-    ingredient: Ingredient;
-  })[];
+  recipeIngredients: RecipeIngredient[];
+};
+
+export type RecipeWithIngredientsAndTags = RecipeWithIngredients & {
+  mealTypes: Array<{ tag: string; name: string; slug: string }>;
+  diets: Array<{ tag: string; name: string; slug: string }>;
+  kitchens: Array<{ tag: string; name: string; slug: string }>;
 };
 
 export type IngredientWithCategory = Ingredient & {

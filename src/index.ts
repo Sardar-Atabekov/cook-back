@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import apiRouter from './routes/index';
 import { corsMiddleware } from './config/cors';
 import { runSeed } from './storage';
+import { seedTags } from './scripts/seed-tags';
 
 dotenv.config();
 
@@ -48,11 +49,12 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   res.status(status).json({ message });
 });
 
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 5005;
 app.listen(port, async () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
   try {
     // await runSeed();
+    await seedTags();
     console.log('🌱 Database seeded successfully');
   } catch (err) {
     console.error('❌ Failed to seed database');

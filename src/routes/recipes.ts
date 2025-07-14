@@ -4,6 +4,7 @@ import * as recipeController from './../controllers/recipeController';
 const router = Router();
 
 router.get('/recipes', recipeController.getRecipes);
-router.get('/recipes/:id', recipeController.getRecipeById);
+router.get('/recipe/:id', recipeController.getRecipeById);
+router.get('/tags', recipeController.getAllTags);
 
 export default router;

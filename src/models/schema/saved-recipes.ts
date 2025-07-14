@@ -8,3 +8,14 @@ export const savedRecipes = pgTable('saved_recipes', {
   recipeId: integer('recipe_id').references(() => recipes.id),
   createdAt: timestamp('created_at').defaultNow(),
 });
+
+export const cookbookRecipes = pgTable('cookbook_recipes', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id')
+    .notNull()
+    .references(() => users.id),
+  recipeId: integer('recipe_id')
+    .notNull()
+    .references(() => recipes.id),
+  createdAt: timestamp('created_at').defaultNow(),
+});

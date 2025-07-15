@@ -30,7 +30,8 @@
     "lint-fix": "node scripts/lint.js --fix",
     "postinstall": "husky install",
     "test": "vitest",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:indexes": "tsx src/scripts/apply-indexes.ts"
   },
   "dependencies": {
     "axios": "^1.10.0",

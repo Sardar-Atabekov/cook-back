@@ -13,7 +13,6 @@ export async function getRecipes(req: Request, res: Response) {
       dietTags,
       mealType,
     } = req.query;
-    console.log('req.query', req.query);
     if (!lang || typeof lang !== 'string') {
       return res
         .status(400)
@@ -81,11 +80,7 @@ export async function getRecipes(req: Request, res: Response) {
     }
 
     // Получение рецептов (limit + 1 — для определения hasMore)
-    console.log('parsedOffset', parsedOffset);
-    console.log('dietTagIds', dietTagIds);
-    console.log('mealTypeIds', mealTypeIds);
-    console.log('kitchenIds', kitchenIds);
-    console.log('ingredientIds', ingredientIds);
+
     const recipes = await recipeStorage.getRecipes(
       ingredientIds,
       parsedLimit + 1,

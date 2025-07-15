@@ -28,6 +28,20 @@ type Tag = {
   type: 'meal_type' | 'diet' | 'kitchen';
 };
 
+// Вспомогательная функция для получения ингредиентов рецептов
+const getIngredientsForRecipes = async (recipeIds: number[]) => {
+  if (recipeIds.length === 0) return [];
+
+  return await db
+    .select({
+      recipeIngredient: recipeIngredients,
+      ingredient: ingredients,
+    })
+    .from(recipeIngredients)
+    .innerJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
+    .where(inArray(recipeIngredients.recipeId, recipeIds));
+};
+
 export const recipeStorage = {
   async getRecipes(
     ingredientIds: number[],
@@ -43,26 +57,6 @@ export const recipeStorage = {
       missingIngredients: RecipeIngredient[];
     })[]
   > {
-    console.log('dietTagIds', dietTagIds);
-    console.log('mealTypeIds', mealTypeIds);
-    console.log('kitchenIds', kitchenIds);
-    console.log('ingredientIds', ingredientIds);
-    const getIngredientsForRecipes = async (recipeIds: number[]) => {
-      if (recipeIds.length === 0) return [];
-
-      return await db
-        .select({
-          recipeIngredient: recipeIngredients,
-          ingredient: ingredients,
-        })
-        .from(recipeIngredients)
-        .innerJoin(
-          ingredients,
-          eq(recipeIngredients.ingredientId, ingredients.id)
-        )
-        .where(inArray(recipeIngredients.recipeId, recipeIds));
-    };
-
     // Функция для применения фильтров
     const buildFilterConditions = () => {
       const conditions = [eq(recipes.lang, lang)];
@@ -133,10 +127,13 @@ export const recipeStorage = {
         .offset(offset);
 
       const recipeIds = recipesResult.map((r) => r.id);
-      const recipeIngredientsResult = await getIngredientsForRecipes(recipeIds);
 
-      const { mealTypes, diets, kitchens } =
-        await getTagsForRecipeIds(recipeIds);
+      // Выполняем запросы параллельно для улучшения производительности
+      const [recipeIngredientsResult, { mealTypes, diets, kitchens }] =
+        await Promise.all([
+          getIngredientsForRecipes(recipeIds),
+          getTagsForRecipeIds(recipeIds),
+        ]);
 
       return recipesResult.map((recipe) => {
         const recipeIngr = recipeIngredientsResult
@@ -181,9 +178,13 @@ export const recipeStorage = {
 
     const recipesResult = Array.from(recipeMap.values());
     const recipeIds = recipesResult.map((r) => r.id);
-    const recipeIngredientsResult = await getIngredientsForRecipes(recipeIds);
 
-    const { mealTypes, diets, kitchens } = await getTagsForRecipeIds(recipeIds);
+    // Выполняем запросы параллельно для улучшения производительности
+    const [recipeIngredientsResult, { mealTypes, diets, kitchens }] =
+      await Promise.all([
+        getIngredientsForRecipes(recipeIds),
+        getTagsForRecipeIds(recipeIds),
+      ]);
 
     const fullResult = recipesResult.map((recipe) => {
       const recipeIngr = recipeIngredientsResult
@@ -299,7 +300,12 @@ export const recipeStorage = {
     dietTagIds?: number[],
     mealTypeIds?: number[],
     kitchenIds?: number[]
-  ): Promise<Recipe[]> {
+  ): Promise<
+    (RecipeWithIngredientsAndTags & {
+      matchPercentage: number;
+      missingIngredients: RecipeIngredient[];
+    })[]
+  > {
     // Условия для фильтрации
     const conditions = [
       sql`${recipes.title} ILIKE ${`%${query}%`}`,
@@ -355,12 +361,60 @@ export const recipeStorage = {
       );
     }
 
-    return await db
+    // Получаем рецепты с поиском и фильтрами
+    const recipesResult = await db
       .select()
       .from(recipes)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .limit(limit)
       .offset(offset);
+
+    const recipeIds = recipesResult.map((r) => r.id);
+
+    if (recipeIds.length === 0) {
+      return [];
+    }
+
+    // Выполняем запросы параллельно для улучшения производительности
+    const [recipeIngredientsResult, { mealTypes, diets, kitchens }] =
+      await Promise.all([
+        getIngredientsForRecipes(recipeIds),
+        getTagsForRecipeIds(recipeIds),
+      ]);
+
+    return recipesResult.map((recipe) => {
+      const recipeIngr = recipeIngredientsResult
+        .filter((ri) => ri.recipeIngredient.recipeId === recipe.id)
+        .map((ri) => ri.recipeIngredient);
+
+      // Только валидные ingredientId
+      const validRecipeIngredients = recipeIngr.filter(
+        (ri) => typeof ri.ingredientId === 'number' && !isNaN(ri.ingredientId)
+      );
+
+      const matched = validRecipeIngredients.filter((ri) =>
+        ingredientIds.includes(Number(ri.ingredientId))
+      );
+
+      const missing = validRecipeIngredients.filter(
+        (ri) => !ingredientIds.includes(Number(ri.ingredientId))
+      );
+
+      const matchPercentage =
+        validRecipeIngredients.length > 0
+          ? Math.round((matched.length / validRecipeIngredients.length) * 100)
+          : 0;
+
+      return {
+        ...recipe,
+        recipeIngredients: recipeIngr,
+        matchPercentage,
+        missingIngredients: missing,
+        mealTypes: mealTypes.get(recipe.id) || [],
+        diets: diets.get(recipe.id) || [],
+        kitchens: kitchens.get(recipe.id) || [],
+      };
+    });
   },
 
   async saveRecipe(userId: number, recipeId: number): Promise<SavedRecipe> {
@@ -417,15 +471,12 @@ export const recipeStorage = {
       );
   },
 
-  async getUserSavedRecipes(
-    userId: number,
-    lang: string
-  ): Promise<RecipeWithIngredients[]> {
+  async getUserSavedRecipes(userId: number): Promise<RecipeWithIngredients[]> {
     const savedRecipesResult = await db
       .select({ recipe: recipes })
       .from(savedRecipes)
       .innerJoin(recipes, eq(savedRecipes.recipeId, recipes.id))
-      .where(and(eq(savedRecipes.userId, userId), eq(recipes.lang, lang)));
+      .where(and(eq(savedRecipes.userId, userId)));
 
     const recipeIds = savedRecipesResult.map((sr) => sr.recipe.id);
     if (recipeIds.length === 0) return [];
@@ -603,38 +654,41 @@ export const recipeStorage = {
 };
 
 async function getTagsForRecipeIds(recipeIds: number[]) {
-  const mealTypesRaw = await db
-    .select({
-      recipeId: recipeMealTypes.recipeId,
-      tag: mealTypes.tag,
-      name: mealTypes.name,
-      slug: mealTypes.slug,
-    })
-    .from(recipeMealTypes)
-    .innerJoin(mealTypes, eq(recipeMealTypes.mealTypeId, mealTypes.id))
-    .where(inArray(recipeMealTypes.recipeId, recipeIds));
+  // Выполняем все три запроса параллельно для улучшения производительности
+  const [mealTypesRaw, dietsRaw, kitchensRaw] = await Promise.all([
+    db
+      .select({
+        recipeId: recipeMealTypes.recipeId,
+        tag: mealTypes.tag,
+        name: mealTypes.name,
+        slug: mealTypes.slug,
+      })
+      .from(recipeMealTypes)
+      .innerJoin(mealTypes, eq(recipeMealTypes.mealTypeId, mealTypes.id))
+      .where(inArray(recipeMealTypes.recipeId, recipeIds)),
 
-  const dietsRaw = await db
-    .select({
-      recipeId: recipeDiets.recipeId,
-      tag: diets.tag,
-      name: diets.name,
-      slug: diets.slug,
-    })
-    .from(recipeDiets)
-    .innerJoin(diets, eq(recipeDiets.dietId, diets.id))
-    .where(inArray(recipeDiets.recipeId, recipeIds));
+    db
+      .select({
+        recipeId: recipeDiets.recipeId,
+        tag: diets.tag,
+        name: diets.name,
+        slug: diets.slug,
+      })
+      .from(recipeDiets)
+      .innerJoin(diets, eq(recipeDiets.dietId, diets.id))
+      .where(inArray(recipeDiets.recipeId, recipeIds)),
 
-  const kitchensRaw = await db
-    .select({
-      recipeId: recipeKitchens.recipeId,
-      tag: kitchens.tag,
-      name: kitchens.name,
-      slug: kitchens.slug,
-    })
-    .from(recipeKitchens)
-    .innerJoin(kitchens, eq(recipeKitchens.kitchenId, kitchens.id))
-    .where(inArray(recipeKitchens.recipeId, recipeIds));
+    db
+      .select({
+        recipeId: recipeKitchens.recipeId,
+        tag: kitchens.tag,
+        name: kitchens.name,
+        slug: kitchens.slug,
+      })
+      .from(recipeKitchens)
+      .innerJoin(kitchens, eq(recipeKitchens.kitchenId, kitchens.id))
+      .where(inArray(recipeKitchens.recipeId, recipeIds)),
+  ]);
 
   const groupByRecipe = (rows: any[]) => {
     const map = new Map<number, any[]>();

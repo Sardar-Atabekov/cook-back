@@ -54,7 +54,7 @@ app.listen(port, async () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
   try {
     // await runSeed();
-    await seedTags();
+    // await seedTags();
     console.log('🌱 Database seeded successfully');
   } catch (err) {
     console.error('❌ Failed to seed database');

@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import * as userController from './../controllers/savedRecipeController';
-// import { authenticateToken } from './authMiddleware';
+import { requireAuth } from './../middlewares/auth';
 
 const router = Router();
 
-router.get('/saved-recipes', userController.getUserSavedRecipes);
-router.post('/save-recipe', userController.saveRecipe);
-router.delete('/save-recipe/:recipeId', userController.unsaveRecipe);
+router.get('/saved-recipes', requireAuth, userController.getUserSavedRecipes);
+router.post('/save-recipe', requireAuth, userController.saveRecipe);
+router.delete('/save-recipe/:recipeId', requireAuth, userController.unsaveRecipe);
 
 export default router;

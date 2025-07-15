@@ -7,6 +7,7 @@ export async function getUserSavedRecipes(
 ) {
   try {
     const recipes = await recipeStorage.getUserSavedRecipes(req.user.id);
+    console.log('recipes', recipes);
     res.json(recipes);
   } catch {
     res.status(500).json({ message: 'Failed to fetch saved recipes' });

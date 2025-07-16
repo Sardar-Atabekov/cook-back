@@ -10,7 +10,7 @@ import {
   type SavedRecipe,
 } from '@/models';
 import { db } from './db';
-import { eq, inArray, sql, and, exists } from 'drizzle-orm';
+import { eq, inArray, sql, and, exists, SQL, count, desc, getTableColumns } from 'drizzle-orm';
 import {
   diets,
   kitchens,
@@ -57,16 +57,19 @@ export const recipeStorage = {
       missingIngredients: RecipeIngredient[];
     })[]
   > {
-    // Функция для применения фильтров
-    const buildFilterConditions = () => {
-      const conditions = [eq(recipes.lang, lang)];
+    // --- Случай 1: Ингредиенты не указаны ---
+    // Логика остается похожей, но мы можем немного ее упростить.
+    if (!ingredientIds || ingredientIds.length === 0) {
+      console.log('Executing simplified query: No ingredients provided.');
 
-      // Фильтры по тегам через ID
-      if (dietTagIds && dietTagIds.length > 0) {
+      const conditions: SQL[] = [eq(recipes.lang, lang)];
+
+      // Динамически добавляем условия для фильтров по тегам
+      if (dietTagIds?.length > 0) {
         conditions.push(
           exists(
             db
-              .select()
+              .select({ n: sql`1` })
               .from(recipeDiets)
               .where(
                 and(
@@ -77,12 +80,11 @@ export const recipeStorage = {
           )
         );
       }
-
-      if (mealTypeIds && mealTypeIds.length > 0) {
+      if (mealTypeIds?.length > 0) {
         conditions.push(
           exists(
             db
-              .select()
+              .select({ n: sql`1` })
               .from(recipeMealTypes)
               .where(
                 and(
@@ -93,12 +95,11 @@ export const recipeStorage = {
           )
         );
       }
-
-      if (kitchenIds && kitchenIds.length > 0) {
+      if (kitchenIds?.length > 0) {
         conditions.push(
           exists(
             db
-              .select()
+              .select({ n: sql`1` })
               .from(recipeKitchens)
               .where(
                 and(
@@ -110,120 +111,166 @@ export const recipeStorage = {
         );
       }
 
-      return conditions;
-    };
-
-    // Если ingredientIds пустой — просто верни рецепты с фильтрами
-    if (ingredientIds.length === 0) {
-      const filterConditions = buildFilterConditions();
-
       const recipesResult = await db
         .select()
         .from(recipes)
-        .where(
-          filterConditions.length > 0 ? and(...filterConditions) : undefined
-        )
+        .where(and(...conditions))
         .limit(limit)
         .offset(offset);
 
+      if (recipesResult.length === 0) {
+        return [];
+      }
+
       const recipeIds = recipesResult.map((r) => r.id);
 
-      // Выполняем запросы параллельно для улучшения производительности
+      // Параллельно получаем связанные данные (ингредиенты и теги)
       const [recipeIngredientsResult, { mealTypes, diets, kitchens }] =
         await Promise.all([
           getIngredientsForRecipes(recipeIds),
           getTagsForRecipeIds(recipeIds),
         ]);
 
-      return recipesResult.map((recipe) => {
-        const recipeIngr = recipeIngredientsResult
-          .filter((ri) => ri.recipeIngredient.recipeId === recipe.id)
-          .map((ri) => ri.recipeIngredient);
-
-        return {
-          ...recipe,
-          recipeIngredients: recipeIngr,
-          matchPercentage: 0,
-          missingIngredients: [],
-          mealTypes: mealTypes.get(recipe.id) || [],
-          diets: diets.get(recipe.id) || [],
-          kitchens: kitchens.get(recipe.id) || [],
-        };
-      });
+      // Собираем финальный результат
+      return recipesResult.map((recipe) => ({
+        ...recipe,
+        recipeIngredients:
+          recipeIngredientsResult
+            .filter((ri) => ri.recipeIngredient.recipeId === recipe.id)
+            .map((ri) => ri.recipeIngredient) || [],
+        matchPercentage: 0, // Нет ингредиентов для сравнения
+        missingIngredients: [],
+        mealTypes: mealTypes.get(recipe.id) || [],
+        diets: diets.get(recipe.id) || [],
+        kitchens: kitchens.get(recipe.id) || [],
+      }));
     }
 
-    // Получаем рецепты, которые содержат нужные ингредиенты И соответствуют фильтрам
-    const filterConditions = buildFilterConditions();
+    // --- Случай 2: Ингредиенты указаны (оптимизированный запрос) ---
+    console.log('Executing optimized query with ingredient matching.');
 
-    const recipesWithIngredients = await db
+    // Подзапрос для подсчета совпадений и общего числа ингредиентов
+    const subquery = db
       .select({
-        recipe: recipes,
+        recipeId: recipeIngredients.recipeId,
+        // Считаем, сколько ингредиентов пользователя есть в рецепте
+        matchedCount: count(
+          sql`CASE WHEN ${recipeIngredients.ingredientId} IN ${ingredientIds} THEN 1 END`
+        ).as('matched_count'),
+        // Считаем общее количество ингредиентов в рецепте
+        totalCount: count(recipeIngredients.ingredientId).as('total_count'),
       })
-      .from(recipes)
-      .innerJoin(recipeIngredients, eq(recipes.id, recipeIngredients.recipeId))
-      .where(
-        and(
-          ...(filterConditions.length > 0 ? filterConditions : []),
-          inArray(recipeIngredients.ingredientId, ingredientIds)
+      .from(recipeIngredients)
+      .groupBy(recipeIngredients.recipeId)
+      .as('subquery');
+
+    // Основной запрос, который объединяет все вместе
+    const conditions: SQL[] = [
+      eq(recipes.lang, lang),
+      // Отбираем только те рецепты, где есть хотя бы одно совпадение
+      sql`${subquery.matchedCount} > 0`,
+    ];
+
+    // Динамически добавляем фильтры по тегам
+    if (dietTagIds?.length > 0) {
+      conditions.push(
+        exists(
+          db
+            .select({ n: sql`1` })
+            .from(recipeDiets)
+            .where(
+              and(
+                eq(recipeDiets.recipeId, recipes.id),
+                inArray(recipeDiets.dietId, dietTagIds)
+              )
+            )
         )
       );
+    }
+    // ... (аналогичные блоки для mealTypeIds и kitchenIds) ...
+    if (mealTypeIds?.length > 0) {
+      conditions.push(
+        exists(
+          db
+            .select({ n: sql`1` })
+            .from(recipeMealTypes)
+            .where(
+              and(
+                eq(recipeMealTypes.recipeId, recipes.id),
+                inArray(recipeMealTypes.mealTypeId, mealTypeIds)
+              )
+            )
+        )
+      );
+    }
+    if (kitchenIds?.length > 0) {
+      conditions.push(
+        exists(
+          db
+            .select({ n: sql`1` })
+            .from(recipeKitchens)
+            .where(
+              and(
+                eq(recipeKitchens.recipeId, recipes.id),
+                inArray(recipeKitchens.kitchenId, kitchenIds)
+              )
+            )
+        )
+      );
+    }
 
-    const recipeMap = new Map<
-      number,
-      (typeof recipesWithIngredients)[0]['recipe']
-    >();
-    recipesWithIngredients.forEach((r) => {
-      recipeMap.set(r.recipe.id, r.recipe);
-    });
+    // Вычисляем процент совпадения прямо в запросе
+    const matchPercentage =
+      sql<number>`ROUND((${subquery.matchedCount} * 100.0) / ${subquery.totalCount})`.as(
+        'matchPercentage'
+      );
 
-    const recipesResult = Array.from(recipeMap.values());
+    const recipesResult = await db
+      .select({
+        ...getTableColumns(recipes), // Выбираем все колонки из таблицы recipes
+        matchPercentage,
+      })
+      .from(recipes)
+      .innerJoin(subquery, eq(recipes.id, subquery.recipeId))
+      .where(and(...conditions))
+      .orderBy(desc(matchPercentage)) // Сортируем по проценту совпадения
+      .limit(limit)
+      .offset(offset);
+
+    if (recipesResult.length === 0) {
+      return [];
+    }
+
     const recipeIds = recipesResult.map((r) => r.id);
 
-    // Выполняем запросы параллельно для улучшения производительности
+    // Параллельно получаем связанные данные для найденных рецептов
     const [recipeIngredientsResult, { mealTypes, diets, kitchens }] =
       await Promise.all([
         getIngredientsForRecipes(recipeIds),
         getTagsForRecipeIds(recipeIds),
       ]);
 
-    const fullResult = recipesResult.map((recipe) => {
-      const recipeIngr = recipeIngredientsResult
-        .filter((ri) => ri.recipeIngredient.recipeId === recipe.id)
-        .map((ri) => ri.recipeIngredient);
+    // Собираем финальный результат
+    return recipesResult.map((recipe) => {
+      const allIngredients =
+        recipeIngredientsResult
+          .filter((ri) => ri.recipeIngredient.recipeId === recipe.id)
+          .map((ri) => ri.recipeIngredient) || [];
 
-      // Только те, у кого есть ingredientId
-      const validRecipeIngredients = recipeIngr.filter(
-        (ri) => typeof ri.ingredientId === 'number' && !isNaN(ri.ingredientId)
+      // Разделяем ингредиенты на недостающие и имеющиеся
+      const missingIngredients = allIngredients.filter(
+        (ing) => !ingredientIds.includes(ing.ingredientId!)
       );
-
-      const matched = validRecipeIngredients.filter((ri) =>
-        ingredientIds.includes(Number(ri.ingredientId))
-      );
-
-      const missing = validRecipeIngredients.filter(
-        (ri) => !ingredientIds.includes(Number(ri.ingredientId))
-      );
-
-      const matchPercentage =
-        validRecipeIngredients.length > 0
-          ? Math.round((matched.length / validRecipeIngredients.length) * 100)
-          : 0;
 
       return {
         ...recipe,
-        recipeIngredients: recipeIngr,
-        matchPercentage,
-        missingIngredients: missing,
+        recipeIngredients: allIngredients,
+        missingIngredients,
         mealTypes: mealTypes.get(recipe.id) || [],
         diets: diets.get(recipe.id) || [],
         kitchens: kitchens.get(recipe.id) || [],
       };
     });
-
-    // Сортируем по matchPercentage DESC и возвращаем с учетом limit/offset
-    return fullResult
-      .sort((a, b) => b.matchPercentage - a.matchPercentage)
-      .slice(offset, offset + limit);
   },
 
   async getRecipeById(

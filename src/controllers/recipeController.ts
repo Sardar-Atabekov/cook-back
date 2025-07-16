@@ -13,6 +13,7 @@ export async function getRecipes(req: Request, res: Response) {
       dietTags,
       mealType,
     } = req.query;
+    console.log('req.query', req.query);
     if (!lang || typeof lang !== 'string') {
       return res
         .status(400)
@@ -90,7 +91,7 @@ export async function getRecipes(req: Request, res: Response) {
       mealTypeIds,
       kitchenIds
     );
-
+    console.log('recipes', recipes);
     const hasMore = recipes.length > parsedLimit;
     const limitedRecipes = recipes.slice(0, parsedLimit);
 

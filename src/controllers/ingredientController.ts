@@ -46,6 +46,7 @@ export async function getGroupedIngredients(req: Request, res: Response) {
     const language = (req.query.lang as string) || 'en';
     console.log(language);
     const data = await ingredientStorage.getFullIngredientTree(language);
+    console.log('data', data);
     res.json(data);
   } catch (error) {
     console.error('Failed to fetch grouped ingredients:', error);

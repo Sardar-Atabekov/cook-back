@@ -7,19 +7,21 @@ import {
 } from '@/models';
 import { syncSupercookIngredients } from '@/lib/supercook-parser';
 import { sql } from 'drizzle-orm';
+import { dropOldIndexes } from './dropOldIndexes';
 
 // Запускаем полную синхронизацию для русского языка
 
 export async function runSeed() {
   try {
+    await dropOldIndexes();
     // Удаляет все таблицы полностью (не просто очистка, а дроп)
-    const tables = await db.execute<{ tablename: string }>(
-      sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
-    );
-    const tableRows = tables.rows ?? tables; // Support both QueryResult and array
-    for (const { tablename } of tableRows) {
-      await db.execute(sql.raw(`DROP TABLE IF EXISTS "${tablename}" CASCADE`));
-    }
+    // const tables = await db.execute<{ tablename: string }>(
+    //   sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
+    // );
+    // const tableRows = tables.rows ?? tables; // Support both QueryResult and array
+    // for (const { tablename } of tableRows) {
+    //   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${tablename}" CASCADE`));
+    // }
     // const categoryData = [
     //   {
     //     names: 'Pantry Essentials',

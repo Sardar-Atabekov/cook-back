@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { db } // Предполагается, что ваш экземпляр Drizzle DB импортируется так
+import { db } from '@/storage/db';
 
 /**
  * Удаляет старый набор индексов из базы данных.
@@ -45,12 +45,14 @@ export async function dropOldIndexes() {
 
   for (const indexName of indexesToDrop) {
     try {
-      // Используем db.run для выполнения сырого SQL
-      await db.run(sql.raw(`DROP INDEX IF EXISTS ${indexName}`));
-      console.log(`Successfully dropped index: ${indexName}`);
-    } catch (error) {
+      // Используем db.execute для выполнения сырого SQL (db.run не существует)
+      await db.execute(sql.raw(`DROP INDEX IF EXISTS ${indexName}`));
+      console.log(`Индекс успешно удалён: ${indexName}`);
+    } catch (error: any) {
       // Ошибки могут возникать, если индекс не существует, что нормально.
-      console.warn(`Could not drop index ${indexName}. It might not exist. Error: ${error.message}`);
+      console.warn(
+        `Could not drop index ${indexName}. It might not exist. Error: ${error.message}`
+      );
     }
   }
 

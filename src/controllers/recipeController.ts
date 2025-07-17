@@ -48,6 +48,7 @@ export async function getRecipes(req: Request, res: Response) {
           .filter((id) => !isNaN(id))
       : [];
 
+    const only = req.query.only === 'true';
     // Поиск по заголовку
     if (search) {
       const recipes = await recipeStorage.searchRecipes(
@@ -89,7 +90,8 @@ export async function getRecipes(req: Request, res: Response) {
       lang,
       dietTagIds,
       mealTypeIds,
-      kitchenIds
+      kitchenIds,
+      only
     );
     console.log('recipes', recipes);
     const hasMore = recipes.length > parsedLimit;
@@ -101,7 +103,8 @@ export async function getRecipes(req: Request, res: Response) {
       lang,
       dietTagIds,
       mealTypeIds,
-      kitchenIds
+      kitchenIds,
+      only
     );
 
     res.json({

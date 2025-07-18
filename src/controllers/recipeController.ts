@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { recipeStorage } from '../storage';
 import { cache } from '../storage/redis';
+import { recipeByIdStorage } from '@/storage/recipeById';
 
 export async function getRecipes(req: Request, res: Response) {
   try {
@@ -217,7 +218,7 @@ export async function getRecipeById(req: Request, res: Response) {
       return res.json(JSON.parse(cached));
     }
 
-    const recipe = await recipeStorage.getRecipeById(id, pgIngredientIds);
+    const recipe = await recipeByIdStorage.getRecipeById(id, pgIngredientIds);
     console.log('recipe', recipe);
     if (!recipe) {
       return res.status(404).json({ message: 'Recipe not found' });
@@ -239,7 +240,7 @@ export async function getAllTags(req: Request, res: Response) {
     if (cached) {
       return res.json(JSON.parse(cached));
     }
-    const tags = await recipeStorage.getAllTags();
+    const tags = await recipeByIdStorage.getAllTags();
     const response = { tags };
     // Кэшируем теги на 7 дней
     await cache.setex(cacheKey, 604800, JSON.stringify(response));

@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
 import {
-  recipeStorage,
   getIngredientsForRecipeIds,
   getTagsForRecipeIds,
+  userStorage,
 } from './../storage';
 import { cache } from '../storage/redis';
 
@@ -18,11 +18,7 @@ export async function getUserSavedRecipes(
       return res.json(JSON.parse(cached));
     }
 
-    const recipes = await recipeStorage.getUserSavedRecipes(
-      req.user.id,
-      100,
-      0
-    );
+    const recipes = await userStorage.getUserSavedRecipes(req.user.id, 100, 0);
     if (!full) {
       await cache.setex(cacheKey, 3600, JSON.stringify(recipes));
       return res.json(recipes);
@@ -50,7 +46,7 @@ export async function getUserSavedRecipes(
 export async function saveRecipe(req: Request & { user?: any }, res: Response) {
   try {
     const { recipeId } = req.body;
-    const savedRecipe = await recipeStorage.saveRecipe(req.user.id, recipeId);
+    const savedRecipe = await userStorage.saveRecipe(req.user.id, recipeId);
 
     // Инвалидируем кэш избранных рецептов пользователя
     const cacheKey = `saved_recipes:${req.user.id}`;
@@ -68,7 +64,7 @@ export async function unsaveRecipe(
 ) {
   try {
     const recipeId = parseInt(req.params.recipeId);
-    await recipeStorage.unsaveRecipe(req.user.id, recipeId);
+    await userStorage.unsaveRecipe(req.user.id, recipeId);
 
     // Инвалидируем кэш избранных рецептов пользователя
     const cacheKey = `saved_recipes:${req.user.id}`;

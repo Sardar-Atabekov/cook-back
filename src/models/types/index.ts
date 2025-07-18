@@ -4,7 +4,7 @@ import { ingredientCategories } from '../schema/ingredient-categories';
 import { ingredients } from '../schema/ingredients';
 import { recipes } from '../schema/recipes';
 import { recipeIngredients } from '../schema/recipe-ingredients';
-import { savedRecipes } from '../schema/saved-recipes';
+import { savedRecipes, cookbookRecipes } from '../schema/saved-recipes';
 import { insertUserSchema } from '../zod';
 
 export type User = typeof users.$inferSelect;
@@ -14,6 +14,7 @@ export type Ingredient = typeof ingredients.$inferSelect;
 export type Recipe = typeof recipes.$inferSelect;
 export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
 export type SavedRecipe = typeof savedRecipes.$inferSelect;
+export type CookedRecipe = typeof cookbookRecipes.$inferSelect;
 
 export type RecipeWithIngredients = Recipe & {
   recipeIngredients: RecipeIngredient[];

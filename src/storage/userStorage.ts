@@ -7,6 +7,8 @@ import {
   recipes,
   Recipe,
   SavedRecipe,
+  cookbookRecipes,
+  CookedRecipe,
   diets,
   kitchens,
   mealTypes,
@@ -52,6 +54,21 @@ export const userStorage = {
       .offset(offset);
   },
 
+  async getUserCookedRecipes(
+    userId: number,
+    limit: number,
+    offset: number
+  ): Promise<Recipe[]> {
+    return db
+      .select(getTableColumns(recipes))
+      .from(cookbookRecipes)
+      .innerJoin(recipes, eq(cookbookRecipes.recipeId, recipes.id))
+      .where(eq(cookbookRecipes.userId, userId))
+      .orderBy(desc(cookbookRecipes.createdAt), asc(recipes.id)) // Стабильная сортировка
+      .limit(limit)
+      .offset(offset);
+  },
+
   /**
    * @description Сохраняет рецепт для пользователя.
    */
@@ -64,6 +81,20 @@ export const userStorage = {
   },
 
   /**
+   * @description Сохраняет рецепт для пользователя.
+   */
+  async saveCookedRecipe(
+    userId: number,
+    recipeId: number
+  ): Promise<CookedRecipe> {
+    const [cookedRecipe] = await db
+      .insert(cookbookRecipes)
+      .values({ userId, recipeId })
+      .returning();
+    return cookedRecipe;
+  },
+
+  /**
    * @description Удаляет рецепт из сохраненных у пользователя.
    */
   async unsaveRecipe(userId: number, recipeId: number): Promise<void> {
@@ -73,6 +104,19 @@ export const userStorage = {
         and(
           eq(savedRecipes.userId, userId),
           eq(savedRecipes.recipeId, recipeId)
+        )
+      );
+  },
+  /**
+   * @description Удаляет рецепт из сохраненных у пользователя.
+   */
+  async unsaveCookedRecipe(userId: number, recipeId: number): Promise<void> {
+    await db
+      .delete(cookbookRecipes)
+      .where(
+        and(
+          eq(cookbookRecipes.userId, userId),
+          eq(cookbookRecipes.recipeId, recipeId)
         )
       );
   },

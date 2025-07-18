@@ -23,7 +23,7 @@ export async function getRecipes(req: Request, res: Response) {
         .json({ message: 'Missing or invalid "lang" parameter' });
     }
 
-    const parsedLimit = Math.min(Math.max(parseInt(limit as string), 1), 100);
+    const parsedLimit = Math.min(Math.max(parseInt(limit as string), 1), 40);
     const parsedOffset = Math.min(
       Math.max(parseInt(offset as string), 0),
       10000
@@ -128,6 +128,20 @@ export async function getRecipes(req: Request, res: Response) {
       return res.json(response);
     }
 
+    const isNoIngredients = !pgIngredientIds || pgIngredientIds.length === 0;
+    const plainCacheKey = isNoIngredients
+      ? `recipes:plain:${JSON.stringify({ limit, offset, lang, country, dietTags, mealType, only: req.query.only })}`
+      : `recipes:${JSON.stringify({ ingredientParam, limit, offset, lang, country, dietTags, mealType, only: req.query.only })}`;
+
+    // Проверяем кэш только если нет ингредиентов
+    if (!search && isNoIngredients) {
+      const cached = await cache.get(plainCacheKey);
+      if (cached) {
+        console.log('[CACHE HIT] getRecipes plain', plainCacheKey);
+        console.timeEnd(`getRecipes-total-${requestId}`);
+        return res.json(JSON.parse(cached));
+      }
+    }
     // Получение рецептов (limit + 1 — для определения hasMore)
     const listCacheKey = `recipes:${JSON.stringify({ ingredientParam, limit, offset, search, lang, country, dietTags, mealType, only: req.query.only })}`;
     const cached = await cache.get(listCacheKey);
@@ -156,37 +170,57 @@ export async function getRecipes(req: Request, res: Response) {
     console.time(`getRecipes-totalCount-${requestId}`);
 
     // Кэшируем подсчёт для ускорения
-    let total = await cache.getCachedRecipeCount({
-      ingredientIds: pgIngredientIds,
-      lang,
-      dietTagIds,
-      mealTypeIds,
-      kitchenIds,
-    });
-
-    if (total === null) {
-      total = await recipeStorage.countRecipes(
-        pgIngredientIds,
-        lang,
-        dietTagIds,
-        mealTypeIds,
-        kitchenIds
-      );
-      await cache.cacheRecipeCount(
-        {
-          ingredientIds: pgIngredientIds,
+    let total;
+    if (isNoIngredients) {
+      total = await cache.get('recipes:plain:count:' + lang);
+      if (total !== null) {
+        total = Number(total);
+      } else {
+        total = await recipeStorage.countRecipes(
+          [],
           lang,
           dietTagIds,
           mealTypeIds,
-          kitchenIds,
-        },
-        total
-      );
+          kitchenIds
+        );
+        await cache.setex('recipes:plain:count:' + lang, 3600, String(total)); // 1 час
+      }
+    } else {
+      total = await cache.getCachedRecipeCount({
+        ingredientIds: pgIngredientIds,
+        lang,
+        dietTagIds,
+        mealTypeIds,
+        kitchenIds,
+      });
+      if (total === null) {
+        total = await recipeStorage.countRecipes(
+          pgIngredientIds,
+          lang,
+          dietTagIds,
+          mealTypeIds,
+          kitchenIds
+        );
+        await cache.cacheRecipeCount(
+          {
+            ingredientIds: pgIngredientIds,
+            lang,
+            dietTagIds,
+            mealTypeIds,
+            kitchenIds,
+          },
+          total
+        );
+      }
     }
 
     console.timeEnd(`getRecipes-totalCount-${requestId}`);
     const response = { recipes: limitedRecipes, total, hasMore };
-    await cache.setex(listCacheKey, 604800, JSON.stringify(response));
+    if (isNoIngredients) {
+      await cache.setex(plainCacheKey, 3600, JSON.stringify(response)); // 1 час
+    } else {
+      await cache.setex(listCacheKey, 604800, JSON.stringify(response));
+    }
     console.timeEnd(`getRecipes-total-${requestId}`);
     res.json(response);
   } catch (error) {

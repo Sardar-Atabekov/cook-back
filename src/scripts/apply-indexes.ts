@@ -1,7 +1,8 @@
 import { db } from '../storage/db';
 import { readFileSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { sql } from 'drizzle-orm';
+import { fileURLToPath } from 'url';
 
 // Получаем __dirname для ES модулей
 const __filename = fileURLToPath(import.meta.url);

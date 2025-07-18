@@ -190,7 +190,23 @@ export const recipeStorage = {
       ...tagConditions,
     ];
 
-    // Всегда ищем только по названию, ингредиенты только для % совпадения
+    if (!ingredientIds?.length) {
+      // Быстрый SELECT без join-ов
+      return db
+        .select({
+          ...selectFields,
+          matchedCount: sql<number>`0`.as('matchedCount'),
+          totalCount: sql<number>`0`.as('totalCount'),
+          matchPercentage: sql<number>`0`.as('matchPercentage'),
+        })
+        .from(recipes)
+        .where(and(...baseConditions))
+        .orderBy(desc(recipes.id))
+        .limit(limit)
+        .offset(offset);
+    }
+
+    // Если ингредиенты есть — LEFT JOIN для % совпадения
     const ingredientStats = db
       .select({
         recipeId: recipeIngredients.recipeId,
@@ -252,7 +268,22 @@ export const recipeStorage = {
       eq(recipes.lang, lang),
       ...tagConditions,
     ];
-    // Subquery для matchPercentage
+    if (!ingredientIds?.length) {
+      // Быстрый SELECT без join-ов
+      return db
+        .select({
+          ...selectFields,
+          matchedCount: sql<number>`0`.as('matchedCount'),
+          totalCount: sql<number>`0`.as('totalCount'),
+          matchPercentage: sql<number>`0`.as('matchPercentage'),
+        })
+        .from(recipes)
+        .where(and(...conditions))
+        .orderBy(desc(recipes.id))
+        .limit(limit)
+        .offset(offset);
+    }
+    // Если ингредиенты есть — LEFT JOIN для % совпадения
     const ingredientMatchSubquery = db
       .select({
         recipeId: recipeIngredients.recipeId,

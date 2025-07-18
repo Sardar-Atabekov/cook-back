@@ -1,4 +1,4 @@
 export { userStorage } from './userStorage';
 export { ingredientStorage } from './ingredientStorage';
-export { recipeStorage } from './recipeStorage';
+export * from './recipeStorage';
 export { runSeed } from './seed';

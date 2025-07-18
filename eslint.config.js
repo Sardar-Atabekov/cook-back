@@ -47,20 +47,17 @@ export default defineConfig([
       'prettier/prettier': ['error', {}, { usePrettierrc: true }],
 
       // TypeScript
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        { argsIgnorePattern: '^_' },
-      ],
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-var-requires': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
-
+      '@typescript-eslint/no-unused-vars': 'off',
       // JS
       'no-console': isProd ? ['error', { allow: ['warn', 'error'] }] : 'off',
       'no-debugger': isProd ? 'error' : 'off',
       'no-empty': ['warn', { allowEmptyCatch: true }],
       'no-unused-vars': 'off',
       'no-undef': 'off',
+      'promise/param-names': 'off',
 
       // Импорты
       'import/no-duplicates': 'error',

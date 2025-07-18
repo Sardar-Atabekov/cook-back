@@ -11,6 +11,42 @@ if (!process.env.POSTGRES_URI) {
 let client: Client;
 let db: ReturnType<typeof drizzle>;
 
+// Обёртка для логирования медленных SQL-запросов
+function wrapDbWithLogging(db: any) {
+  const handler = {
+    get(target: any, prop: string) {
+      const orig = target[prop];
+      if (typeof orig === 'function') {
+        return async function (...args: any[]) {
+          const start = Date.now();
+          const result = await orig.apply(target, args);
+          const duration = Date.now() - start;
+          if (duration > 300) {
+            // Попробуем получить SQL-текст (для drizzle это может быть .toSQL() или .sql)
+            let sqlText = '';
+            if (args[0] && typeof args[0] === 'object' && args[0].toSQL) {
+              sqlText = args[0].toSQL().sql;
+            } else if (args[0] && typeof args[0] === 'string') {
+              sqlText = args[0];
+            }
+            console.warn(
+              `[SLOW SQL >300ms] ${duration}ms :: ${prop} :: ${sqlText}`
+            );
+            if (duration > 1000) {
+              console.error(
+                `[ALERT: SLOW SQL >1s] ${duration}ms :: ${prop} :: ${sqlText}`
+              );
+            }
+          }
+          return result;
+        };
+      }
+      return orig;
+    },
+  };
+  return new Proxy(db, handler);
+}
+
 async function connectWithRetry(retries = 5, delay = 2000) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -25,7 +61,8 @@ async function connectWithRetry(retries = 5, delay = 2000) {
       });
 
       await client.connect();
-      db = drizzle(client);
+      db = drizzle(client) as any;
+      // db = wrapDbWithLogging(db);
       console.log('Postgres connected');
       return;
     } catch (err) {

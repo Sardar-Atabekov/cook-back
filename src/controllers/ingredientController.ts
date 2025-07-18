@@ -1,12 +1,19 @@
 import { Request, Response } from 'express';
 import { ingredientStorage } from '../storage/ingredientStorage';
-import { syncSupercookIngredients } from '@/lib/supercook-parser';
+import { cache } from '../storage/redis';
 
 export async function getCategories(req: Request, res: Response) {
   try {
     const language = (req.query.language as string) || 'en';
+    const cacheKey = `categories:${language}`;
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
     const categories =
       await ingredientStorage.getIngredientCategories(language);
+    // Кэшируем категории на 7 дней
+    await cache.setex(cacheKey, 604800, JSON.stringify(categories));
     res.json(categories);
   } catch (error) {
     console.error('Failed to fetch categories:', error);
@@ -44,9 +51,16 @@ export async function getIngredients(req: Request, res: Response) {
 export async function getGroupedIngredients(req: Request, res: Response) {
   try {
     const language = (req.query.lang as string) || 'en';
+    const cacheKey = `grouped_ingredients:${language}`;
+    const cached = await cache.get(cacheKey);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
     console.log(language);
     const data = await ingredientStorage.getFullIngredientTree(language);
     console.log('data', data);
+    // Кэшируем группированные ингредиенты на 7 дней
+    await cache.setex(cacheKey, 604800, JSON.stringify(data));
     res.json(data);
   } catch (error) {
     console.error('Failed to fetch grouped ingredients:', error);

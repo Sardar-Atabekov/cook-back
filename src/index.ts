@@ -102,7 +102,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   res.status(status).json({ message });
 });
 
-const port = process.env.PORT || 5005;
+const port = process.env.PORT || 5000;
 app.listen(port, async () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
   try {

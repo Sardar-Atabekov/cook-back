@@ -185,6 +185,23 @@ export const recipeByIdStorage = {
       kitchens: tags.kitchens.get(id) || [],
     };
   },
+
+  /**
+   * @description Получает все теги для фильтрации
+   */
+  async getAllTags() {
+    const [mealTypesData, dietsData, kitchensData] = await Promise.all([
+      db.select().from(mealTypes),
+      db.select().from(diets),
+      db.select().from(kitchens),
+    ]);
+
+    return [
+      ...mealTypesData.map((tag) => ({ ...tag, type: 'meal_type' as const })),
+      ...dietsData.map((tag) => ({ ...tag, type: 'diet' as const })),
+      ...kitchensData.map((tag) => ({ ...tag, type: 'kitchen' as const })),
+    ];
+  },
 };
 
 export { getIngredientsForRecipeIds, getTagsForRecipeIds };

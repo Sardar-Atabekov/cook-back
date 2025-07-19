@@ -28,6 +28,10 @@ export const cache = {
     await redis.flushall();
   },
 
+  async flushAll(): Promise<void> {
+    await redis.flushall();
+  },
+
   async clearByPattern(pattern: string): Promise<number> {
     const keys = await redis.keys(pattern);
     if (keys.length > 0) {

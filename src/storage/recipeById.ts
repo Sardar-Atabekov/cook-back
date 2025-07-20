@@ -2,7 +2,6 @@ import {
   recipes,
   recipeIngredients,
   ingredients,
-  savedRecipes,
   type Recipe,
   type RecipeWithIngredientsAndTags,
   type RecipeIngredient,
@@ -48,87 +47,103 @@ type FastRecipeResponse = Recipe & {
 async function getIngredientsForRecipeIds(recipeIds: number[]) {
   if (!recipeIds.length) return new Map();
   const rows = await db
-    .select({
-      recipeId: recipeIngredients.recipeId,
-      ingredient: ingredients,
-      recipeIngredient: recipeIngredients,
-    })
+    .select()
     .from(recipeIngredients)
-    .innerJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
     .where(inArray(recipeIngredients.recipeId, recipeIds));
   const map = new Map<number, any[]>();
   for (const row of rows) {
     if (!map.has(row.recipeId)) map.set(row.recipeId, []);
-    const recipeIngredients = map.get(row.recipeId);
-    if (recipeIngredients) {
-      recipeIngredients.push({ ...row.ingredient, ...row.recipeIngredient });
-    }
+    map.get(row.recipeId)!.push(row);
   }
   return map;
 }
 
 // Batch-функция для получения тегов по списку recipeIds
+// Оптимизировано: связи (id тегов) берём из БД, а сами теги — из кэша (tagStorage.getAllTags)
 async function getTagsForRecipeIds(recipeIds: number[]) {
-  if (!recipeIds.length)
+  if (!recipeIds.length) {
     return { mealTypes: new Map(), diets: new Map(), kitchens: new Map() };
-  // mealTypes
-  const mealTypeRows = await db
-    .select({
-      recipeId: recipeMealTypes.recipeId,
-      tagId: recipeMealTypes.mealTypeId,
-      tag: mealTypes,
-    })
-    .from(recipeMealTypes)
-    .innerJoin(mealTypes, eq(recipeMealTypes.mealTypeId, mealTypes.id))
-    .where(inArray(recipeMealTypes.recipeId, recipeIds));
-  const mealTypesMap = new Map<number, any[]>();
-  for (const row of mealTypeRows) {
-    if (row.recipeId === null) continue;
-    if (!mealTypesMap.has(row.recipeId)) mealTypesMap.set(row.recipeId, []);
-    const mealTypes = mealTypesMap.get(row.recipeId);
-    if (mealTypes) {
-      mealTypes.push(row.tag);
-    }
   }
-  // diets
-  const dietRows = await db
-    .select({
-      recipeId: recipeDiets.recipeId,
-      tagId: recipeDiets.dietId,
-      tag: diets,
-    })
-    .from(recipeDiets)
-    .innerJoin(diets, eq(recipeDiets.dietId, diets.id))
-    .where(inArray(recipeDiets.recipeId, recipeIds));
-  const dietsMap = new Map<number, any[]>();
-  for (const row of dietRows) {
-    if (row.recipeId === null) continue;
-    if (!dietsMap.has(row.recipeId)) dietsMap.set(row.recipeId, []);
-    const diets = dietsMap.get(row.recipeId);
-    if (diets) {
-      diets.push(row.tag);
-    }
+
+  // Получаем связи (id тегов) из БД
+  const [mealTypeLinks, dietLinks, kitchenLinks] = await Promise.all([
+    db
+      .select({
+        recipeId: recipeMealTypes.recipeId,
+        tagId: recipeMealTypes.mealTypeId,
+      })
+      .from(recipeMealTypes)
+      .where(inArray(recipeMealTypes.recipeId, recipeIds)),
+    db
+      .select({ recipeId: recipeDiets.recipeId, tagId: recipeDiets.dietId })
+      .from(recipeDiets)
+      .where(inArray(recipeDiets.recipeId, recipeIds)),
+    db
+      .select({
+        recipeId: recipeKitchens.recipeId,
+        tagId: recipeKitchens.kitchenId,
+      })
+      .from(recipeKitchens)
+      .where(inArray(recipeKitchens.recipeId, recipeIds)),
+  ]);
+
+  // Получаем кэш тегов
+  const allTags = await tagStorage.getAllTags();
+
+  // Фильтруем только валидные связи (оба поля — числа)
+  const validMealTypeLinks: { recipeId: number; tagId: number }[] =
+    mealTypeLinks.filter(
+      (l): l is { recipeId: number; tagId: number } =>
+        typeof l.recipeId === 'number' && typeof l.tagId === 'number'
+    );
+  const validDietLinks: { recipeId: number; tagId: number }[] =
+    dietLinks.filter(
+      (l): l is { recipeId: number; tagId: number } =>
+        typeof l.recipeId === 'number' && typeof l.tagId === 'number'
+    );
+  const validKitchenLinks: { recipeId: number; tagId: number }[] =
+    kitchenLinks.filter(
+      (l): l is { recipeId: number; tagId: number } =>
+        typeof l.recipeId === 'number' && typeof l.tagId === 'number'
+    );
+
+  // Универсальный доступ к массивам тегов
+  let mealTypesArr: any[] = [];
+  let dietsArr: any[] = [];
+  let kitchensArr: any[] = [];
+  if (
+    Array.isArray(allTags.mealTypes) &&
+    Array.isArray(allTags.diets) &&
+    Array.isArray(allTags.kitchens)
+  ) {
+    mealTypesArr = allTags.mealTypes;
+    dietsArr = allTags.diets;
+    kitchensArr = allTags.kitchens;
+  } else if (Array.isArray(allTags.tags)) {
+    mealTypesArr = allTags.tags.filter((t: any) => t.type === 'meal_type');
+    dietsArr = allTags.tags.filter((t: any) => t.type === 'diet');
+    kitchensArr = allTags.tags.filter((t: any) => t.type === 'kitchen');
   }
-  // kitchens
-  const kitchenRows = await db
-    .select({
-      recipeId: recipeKitchens.recipeId,
-      tagId: recipeKitchens.kitchenId,
-      tag: kitchens,
-    })
-    .from(recipeKitchens)
-    .innerJoin(kitchens, eq(recipeKitchens.kitchenId, kitchens.id))
-    .where(inArray(recipeKitchens.recipeId, recipeIds));
-  const kitchensMap = new Map<number, any[]>();
-  for (const row of kitchenRows) {
-    if (row.recipeId === null) continue;
-    if (!kitchensMap.has(row.recipeId)) kitchensMap.set(row.recipeId, []);
-    const kitchens = kitchensMap.get(row.recipeId);
-    if (kitchens) {
-      kitchens.push(row.tag);
+
+  function mapTags(
+    links: { recipeId: number; tagId: number }[],
+    tagArr: any[]
+  ) {
+    if (!Array.isArray(tagArr) || tagArr.length === 0) return new Map();
+    const map = new Map<number, any[]>();
+    for (const { recipeId, tagId } of links) {
+      if (!map.has(recipeId)) map.set(recipeId, []);
+      const tag = tagArr.find((t) => t.id === tagId);
+      if (tag) map.get(recipeId)!.push(tag);
     }
+    return map;
   }
-  return { mealTypes: mealTypesMap, diets: dietsMap, kitchens: kitchensMap };
+
+  return {
+    mealTypes: mapTags(validMealTypeLinks, mealTypesArr),
+    diets: mapTags(validDietLinks, dietsArr),
+    kitchens: mapTags(validKitchenLinks, kitchensArr),
+  };
 }
 
 // =================================================================
@@ -140,68 +155,45 @@ export const recipeByIdStorage = {
    * @description Получает ПОЛНУЮ информацию для ОДНОГО рецепта и атомарно увеличивает счетчик просмотров.
    */
   async getRecipeById(
-    id: number,
-    ingredientIds: number[] = []
-  ): Promise<
-    | (RecipeWithIngredientsAndTags & {
-        matchPercentage: number;
-        missingIngredients: RecipeIngredient[];
-      })
-    | undefined
-  > {
-    // Получаем рецепт
+    id: number
+  ): Promise<RecipeWithIngredientsAndTags | undefined> {
     const [recipe] = await db.select().from(recipes).where(eq(recipes.id, id));
     if (!recipe) return undefined;
 
-    // Получаем ингредиенты и теги batch-запросами
     const [ingredientsMap, tags] = await Promise.all([
       getIngredientsForRecipeIds([id]),
       getTagsForRecipeIds([id]),
     ]);
-    const recipeIngredients = ingredientsMap.get(id) || [];
-    const validIngredients = recipeIngredients.filter(
-      (ing) => ing.ingredientId != null
-    );
-    const matchedIngredients = validIngredients.filter((ing) =>
-      ingredientIds.includes(ing.ingredientId)
-    );
-    const missingIngredients = validIngredients.filter(
-      (ing) => !ingredientIds.includes(ing.ingredientId)
-    );
-    const matchPercentage =
-      validIngredients.length > 0
-        ? Math.round(
-            (matchedIngredients.length / validIngredients.length) * 100
-          )
-        : 0;
 
     return {
       ...recipe,
-      recipeIngredients,
-      matchPercentage,
-      missingIngredients,
+      recipeIngredients: ingredientsMap.get(id) || [],
       mealTypes: tags.mealTypes.get(id) || [],
       diets: tags.diets.get(id) || [],
       kitchens: tags.kitchens.get(id) || [],
     };
   },
+};
 
-  /**
-   * @description Получает все теги для фильтрации
-   */
+// Кэшированный метод для получения всех тегов (mealTypes, diets, kitchens)
+export const tagStorage = {
   async getAllTags() {
-    const [mealTypesData, dietsData, kitchensData] = await Promise.all([
+    const cacheKey = 'tags:all';
+    const cached = await cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    // Получаем все mealTypes, diets, kitchens из БД
+    const [allMealTypes, allDiets, allKitchens] = await Promise.all([
       db.select().from(mealTypes),
       db.select().from(diets),
       db.select().from(kitchens),
     ]);
-
-    return [
-      ...mealTypesData.map((tag) => ({ ...tag, type: 'meal_type' as const })),
-      ...dietsData.map((tag) => ({ ...tag, type: 'diet' as const })),
-      ...kitchensData.map((tag) => ({ ...tag, type: 'kitchen' as const })),
-    ];
+    const tags = {
+      mealTypes: allMealTypes,
+      diets: allDiets,
+      kitchens: allKitchens,
+    };
+    await cache.setex(cacheKey, 604800, JSON.stringify(tags));
+    return tags;
   },
 };
-
-export { getIngredientsForRecipeIds, getTagsForRecipeIds };

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { recipeStorage } from '../storage';
 import { cache } from '../storage/redis';
-import { recipeByIdStorage } from '@/storage/recipeById';
+import { recipeByIdStorage, tagStorage } from '@/storage/recipeById';
 
 export async function getRecipes(req: Request, res: Response) {
   try {
@@ -105,21 +105,20 @@ export async function getRecipeById(req: Request, res: Response) {
       return res.status(400).json({ message: 'Invalid recipe ID' });
     }
 
-    const ingredientIds = parseIngredientParam(req.params.ingredientIds);
-    const cacheKey = `recipe:${id}:${ingredientIds.sort().join(',')}`;
-
+    const cacheKey = `recipe:${id}`;
     const cached = await cache.get(cacheKey);
     if (cached) {
       return res.json(JSON.parse(cached));
     }
 
-    const recipe = await recipeByIdStorage.getRecipeById(id, ingredientIds);
+    // Быстрый возврат результата
+    const recipe = await recipeByIdStorage.getRecipeById(id);
     if (!recipe) {
       return res.status(404).json({ message: 'Recipe not found' });
     }
 
     await cache.setex(cacheKey, 604800, JSON.stringify(recipe));
-    res.json(recipe);
+    return res.json(recipe);
   } catch (error) {
     console.error('getRecipeById error:', error);
     res.status(500).json({ message: 'Failed to fetch recipe' });
@@ -134,7 +133,7 @@ export async function getAllTags(req: Request, res: Response) {
       return res.json(JSON.parse(cached));
     }
 
-    const tags = await recipeByIdStorage.getAllTags();
+    const tags = await tagStorage.getAllTags();
     const response = { tags };
 
     await cache.setex(cacheKey, 604800, JSON.stringify(response));

@@ -7,6 +7,7 @@ import {
 } from '@/models';
 import { eq, and, ilike, sql } from 'drizzle-orm';
 import type { InferSelectModel } from 'drizzle-orm';
+import { cache } from './redis';
 
 export type IngredientCategory = InferSelectModel<typeof ingredientCategories>;
 export type Ingredient = InferSelectModel<typeof ingredients>;
@@ -102,6 +103,55 @@ export const ingredientStorage = {
     }));
   },
 
+  async getAllIngredientsCached(
+    language: string
+  ): Promise<IngredientWithTranslatedCategory[]> {
+    const cacheKey = `ingredients:all:${language}`;
+    const cached = await cache.get(cacheKey);
+    if (cached) return JSON.parse(cached);
+
+    const rows = await db
+      .select({
+        ingredient: ingredients,
+        categoryLink: ingredientCategoryLinks,
+        category: ingredientCategories,
+        categoryTranslation: ingredientCategoryTranslations,
+      })
+      .from(ingredients)
+      .innerJoin(
+        ingredientCategoryLinks,
+        eq(ingredientCategoryLinks.ingredientId, ingredients.id)
+      )
+      .innerJoin(
+        ingredientCategories,
+        eq(ingredientCategories.id, ingredientCategoryLinks.categoryId)
+      )
+      .leftJoin(
+        ingredientCategoryTranslations,
+        and(
+          eq(
+            ingredientCategoryTranslations.categoryId,
+            ingredientCategories.id
+          ),
+          eq(ingredientCategoryTranslations.language, language)
+        )
+      );
+
+    const result = rows.map(
+      ({ ingredient, category, categoryTranslation }) => ({
+        ...ingredient,
+        name: ingredient.name,
+        category: {
+          id: category.id,
+          name: categoryTranslation?.name ?? 'Unknown',
+          icon: category.icon ?? null,
+        },
+      })
+    );
+    await cache.setex(cacheKey, 604800, JSON.stringify(result));
+    return result;
+  },
+
   async searchIngredients(
     query: string,
     language: string
@@ -143,22 +193,6 @@ export const ingredientStorage = {
     return rows.map(({ ingredient }) => ({
       ...ingredient,
       name: ingredient.name, // Use the correct field for name
-    }));
-  },
-
-  async getGroupedIngredientsByCategory(
-    language: string
-  ): Promise<GroupedIngredients> {
-    const categories =
-      await ingredientStorage.getIngredientCategories(language);
-    const allIngredients = await ingredientStorage.getAllIngredients(language);
-
-    return categories.map((category) => ({
-      id: category.id,
-      name: category.name, // If category.name is not available, use 'Unknown'
-      ingredients: allIngredients.filter(
-        (ing) => ing.category && ing.category.id === category.id
-      ),
     }));
   },
 

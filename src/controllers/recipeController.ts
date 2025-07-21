@@ -11,7 +11,7 @@ export async function getRecipes(req: Request, res: Response) {
       offset = '0',
       search,
       lang,
-      country,
+      kitchens,
       dietTags,
       mealType,
     } = req.query;
@@ -32,7 +32,7 @@ export async function getRecipes(req: Request, res: Response) {
     // Парсим теги (оптимизировано для фронтенда)
     const dietTagIds = parseTagParam(dietTags);
     const mealTypeIds = parseTagParam(mealType);
-    const kitchenIds = parseTagParam(country);
+    const kitchenIds = parseTagParam(kitchens);
 
     // Парсим ингредиенты (оптимизировано для фронтенда)
     const ingredientIds = parseIngredientParam(ingredientParam);

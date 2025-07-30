@@ -15,7 +15,7 @@ export async function getRecipes(req: Request, res: Response) {
       dietTags,
       mealType,
     } = req.query;
-
+    console.log('req.query', req.query);
     if (!lang || typeof lang !== 'string') {
       return res.status(400).json({
         message: 'Missing or invalid "lang" parameter',

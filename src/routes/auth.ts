@@ -19,12 +19,12 @@ const loginSchema = z.object({
 const registerSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
-  name: z.string().min(1),
+  username: z.string().min(1),
 });
 
 router.post('/signup', async (req, res) => {
   try {
-    const { email, password, name } = registerSchema.parse(req.body);
+    const { email, password, username } = registerSchema.parse(req.body);
 
     // Проверка на существование пользователя
     const exists = await db
@@ -39,7 +39,7 @@ router.post('/signup', async (req, res) => {
     // Создание пользователя
     const [newUser] = await db
       .insert(users)
-      .values({ name, email, password: hashed })
+      .values({ username, email, password: hashed })
       .returning();
 
     const token = generateToken({ id: String(newUser.id), email });
@@ -49,7 +49,7 @@ router.post('/signup', async (req, res) => {
       user: {
         id: newUser.id,
         email: newUser.email,
-        name: newUser.name,
+        username: newUser.username,
         lastLogin: new Date(),
       },
       expiresIn: '7d',
@@ -85,19 +85,18 @@ router.post('/login', async (req, res) => {
     const match = await comparePasswords(password, user.password);
     if (!match) {
       const failedLoginAttempts = user.failedLoginAttempts + 1;
-      let isLocked = user.isLocked;
-
-      if (failedLoginAttempts >= 100) {
-        isLocked = true;
-      }
+      const shouldLock = failedLoginAttempts >= 100;
 
       // Обновление попыток и блокировки
       await db
         .update(users)
-        .set({ failedLoginAttempts, isLocked })
+        .set({
+          failedLoginAttempts,
+          isLocked: shouldLock || user.isLocked,
+        })
         .where(eq(users.id, user.id));
 
-      if (isLocked) {
+      if (shouldLock || user.isLocked) {
         return res.status(403).json({
           error: 'Account temporarily locked',
           details: 'Too many failed login attempts',

@@ -25,30 +25,20 @@ import { cache } from './redis';
 // =================================================================
 // Типы данных для "быстрых" ответов
 // =================================================================
-// "Быстрый" ответ содержит все поля из таблицы Recipe + данные по ингредиентам
 type FastRecipeResponse = Recipe & {
   matchedCount: number;
   totalCount: number;
   matchPercentage: number;
 };
 
-// Тип для списка рецептов (сокращенная версия)
 type FastRecipeListResponse = {
   id: number;
   title: string;
-  description: string | null;
   prepTime: string | null;
   rating: number | null;
-  difficulty: string | null;
   imageUrl: string | null;
-  instructions: unknown;
-  lang: string | null;
   sourceUrl: string | null;
-  supercookId: string;
-  createdAt: Date | null;
-  viewed: number | null;
   matchedCount: number;
-  totalCount: number;
   matchPercentage: number;
 };
 
@@ -90,147 +80,16 @@ const buildTagFilterConditions = (
 export const recipeStorage = {
   /**
    * @description Оптимизированный метод для получения списков рецептов.
-   * Объединяет получение данных и подсчёт в один запрос.
-   */
-  async getRecipes(
-    ingredientIds: number[],
-    limit: number,
-    offset: number,
-    lang: string,
-    dietTagIds: number[],
-    mealTypeIds: number[],
-    kitchenIds: number[]
-  ): Promise<FastRecipeListResponse[]> {
-    const tagConditions = buildTagFilterConditions(
-      dietTagIds,
-      mealTypeIds,
-      kitchenIds
-    );
-    // Выбираем все поля из таблицы recipes
-    const selectFields = {
-      id: recipes.id,
-      title: recipes.title,
-      description: recipes.description,
-      prepTime: recipes.prepTime,
-      rating: recipes.rating,
-      difficulty: recipes.difficulty,
-      imageUrl: recipes.imageUrl,
-      instructions: recipes.instructions,
-      lang: recipes.lang,
-      sourceUrl: recipes.sourceUrl,
-      supercookId: recipes.supercookId,
-      createdAt: recipes.createdAt,
-      viewed: recipes.viewed,
-    };
-
-    // Базовые условия
-    const baseConditions = [eq(recipes.lang, lang), ...tagConditions];
-    console.log('=== DEBUG getRecipes ===');
-    console.log('lang:', lang);
-    console.log('ingredientIds:', ingredientIds);
-    console.log('dietTagIds:', dietTagIds);
-    console.log('mealTypeIds:', mealTypeIds);
-    console.log('kitchenIds:', kitchenIds);
-    console.log('tagConditions count:', tagConditions.length);
-    console.log('baseConditions count:', baseConditions.length);
-    if (!ingredientIds?.length) {
-      // Если ингредиенты не переданы, но есть фильтры по тегам — фильтруем только по тегам
-      if (dietTagIds?.length || mealTypeIds?.length || kitchenIds?.length) {
-        const result = await db
-          .select({
-            ...selectFields,
-            matchedCount: sql<number>`0`.as('matchedCount'),
-            totalCount: sql<number>`0`.as('totalCount'),
-            matchPercentage: sql<number>`0`.as('matchPercentage'),
-          })
-          .from(recipes)
-          .where(and(...baseConditions))
-          .orderBy(desc(recipes.id))
-          .limit(limit)
-          .offset(offset);
-        console.log('=== RESULT (with tags filter) ===');
-        console.log('result length:', result.length);
-        console.log('first result:', result[0]);
-        return result;
-      }
-      // Простой случай без фильтрации по ингредиентам и тегам — возвращаем все рецепты
-      const result = await db
-        .select({
-          ...selectFields,
-          matchedCount: sql<number>`0`.as('matchedCount'),
-          totalCount: sql<number>`0`.as('totalCount'),
-          matchPercentage: sql<number>`0`.as('matchPercentage'),
-        })
-        .from(recipes)
-        .where(eq(recipes.lang, lang))
-        .orderBy(desc(recipes.id))
-        .limit(limit)
-        .offset(offset);
-      console.log('=== RESULT (no filters) ===');
-      console.log('result length:', result.length);
-      console.log('first result:', result[0]);
-      return result;
-    }
-
-    // Оптимизированный запрос с подсчётом ингредиентов
-    const ingredientStats = db
-      .select({
-        recipeId: recipeIngredients.recipeId,
-        matchedCount: count(
-          sql`CASE WHEN ${inArray(recipeIngredients.ingredientId, ingredientIds)} THEN 1 END`
-        ).as('matched_count'),
-        totalCount: count(recipeIngredients.ingredientId).as('total_count'),
-      })
-      .from(recipeIngredients)
-      .groupBy(recipeIngredients.recipeId)
-      .as('ingredient_stats');
-
-    const matchPercentage = sql<number>`ROUND((${ingredientStats.matchedCount} * 100.0) / NULLIF(${ingredientStats.totalCount}, 0))`;
-
-    // Получаем рецепты с процентом совпадения
-    const recipesResult = await db
-      .select({
-        ...selectFields,
-        matchedCount:
-          sql<number>`COALESCE(${ingredientStats.matchedCount}, 0)`.as(
-            'matchedCount'
-          ),
-        totalCount: sql<number>`COALESCE(${ingredientStats.totalCount}, 0)`.as(
-          'totalCount'
-        ),
-        matchPercentage: sql<number>`COALESCE(${matchPercentage}, 0)`.as(
-          'matchPercentage'
-        ),
-      })
-      .from(recipes)
-      .leftJoin(ingredientStats, eq(recipes.id, ingredientStats.recipeId))
-      .where(
-        and(
-          ...baseConditions,
-          // Только рецепты с совпадениями (не null)
-          sql`COALESCE(${ingredientStats.matchedCount}, 0) > 0`,
-          sql`COALESCE(${ingredientStats.totalCount}, 0) > 0`
-        )
-      )
-      .orderBy(desc(matchPercentage), desc(recipes.id))
-      .limit(limit)
-      .offset(offset);
-
-    return recipesResult;
-  },
-
-  /**
-   * @description Универсальный метод для получения рецептов с поиском и подсчётом.
-   * Обрабатывает все случаи: обычные рецепты, поиск, полнотекстовый поиск.
+   * Возвращает все рецепты, соответствующие поиску, но total - только 100% совпадение ингредиентов.
    */
   async getRecipesUniversal(params: {
-    ingredientIds: number[];
+    ingredientIds?: number[];
     limit: number;
     offset: number;
     lang: string;
-    dietTagIds: number[];
-    mealTypeIds: number[];
-    kitchenIds: number[];
+    dietTagIds?: number[];
+    mealTypeIds?: number[];
+    kitchenIds?: number[];
     search?: string;
     searchType?: 'simple' | 'fulltext';
   }): Promise<{ recipes: FastRecipeListResponse[]; total: number }> {
@@ -251,22 +110,138 @@ export const recipeStorage = {
       mealTypeIds,
       kitchenIds
     );
-    // Выбираем все поля из таблицы recipes
-    const selectFields = {
-      id: recipes.id,
-      title: recipes.title,
-      description: recipes.description,
-      prepTime: recipes.prepTime,
-      rating: recipes.rating,
-      difficulty: recipes.difficulty,
-      imageUrl: recipes.imageUrl,
-      instructions: recipes.instructions,
-      lang: recipes.lang,
-      sourceUrl: recipes.sourceUrl,
-      supercookId: recipes.supercookId,
-      createdAt: recipes.createdAt,
-      viewed: recipes.viewed,
+
+    let baseConditions = [eq(recipes.lang, lang), ...tagConditions];
+
+    if (search) {
+      if (searchType === 'fulltext') {
+        baseConditions.push(
+          sql`to_tsvector('simple', ${recipes.title}) @@ plainto_tsquery('simple', ${search})`
+        );
+      } else {
+        baseConditions.push(ilike(recipes.title, `%${search}%`));
+      }
+    }
+
+    // Подзапрос для статистики ингредиентов (всегда, если есть ingredientIds)
+    const ingredientStats = db
+      .select({
+        recipeId: recipeIngredients.recipeId,
+        matchedCount: count(
+          sql`CASE WHEN ${inArray(recipeIngredients.ingredientId, ingredientIds || [])} THEN 1 END`
+        ).as('matched_count'),
+        totalCount: count(recipeIngredients.ingredientId).as('total_count'),
+      })
+      .from(recipeIngredients)
+      .groupBy(recipeIngredients.recipeId)
+      .as('ingredient_stats');
+
+    // Основной запрос для получения рецептов (возвращает все, что подходят под базовые условия)
+    const recipesResult = await db
+      .select({
+        id: recipes.id,
+        title: recipes.title,
+        prepTime: recipes.prepTime,
+        rating: recipes.rating,
+        difficulty: recipes.difficulty,
+        imageUrl: recipes.imageUrl,
+        sourceUrl: recipes.sourceUrl,
+        matchedCount:
+          sql<number>`COALESCE(${ingredientStats.matchedCount}, 0)`.as(
+            'matchedCount'
+          ),
+        totalCount: sql<number>`COALESCE(${ingredientStats.totalCount}, 0)`.as(
+          'totalCount'
+        ),
+        matchPercentage:
+          sql<number>`COALESCE(ROUND((${ingredientStats.matchedCount} * 100.0) / NULLIF(${ingredientStats.totalCount}, 0)), 0)`.as(
+            'matchPercentage'
+          ),
+      })
+      .from(recipes)
+      .leftJoin(ingredientStats, eq(recipes.id, ingredientStats.recipeId))
+      .where(
+        and(
+          ...baseConditions,
+          // Если ingredientIds предоставлены, фильтруем по наличию совпадений
+          ...(ingredientIds && ingredientIds.length > 0
+            ? [sql`COALESCE(${ingredientStats.matchedCount}, 0) > 0`]
+            : []),
+          ...(ingredientIds && ingredientIds.length > 0
+            ? [sql`COALESCE(${ingredientStats.totalCount}, 0) > 0`]
+            : [])
+        )
+      )
+      .orderBy(
+        // Сортировка по проценту совпадения, если есть ингредиенты, иначе по ID
+        ...(ingredientIds && ingredientIds.length > 0
+          ? [
+              desc(
+                sql`COALESCE(ROUND((${ingredientStats.matchedCount} * 100.0) / NULLIF(${ingredientStats.totalCount}, 0)), 0)`
+              ),
+            ]
+          : []),
+        desc(recipes.id)
+      )
+      .limit(limit)
+      .offset(offset);
+
+    // Отдельный запрос для подсчета total: только рецепты с 100% совпадением
+    let totalCount100Percent = 0;
+    if (ingredientIds && ingredientIds.length > 0) {
+      const totalResult = await db
+        .select({ value: count() })
+        .from(recipes)
+        .leftJoin(ingredientStats, eq(recipes.id, ingredientStats.recipeId))
+        .where(
+          and(
+            ...baseConditions,
+            sql`COALESCE(${ingredientStats.matchedCount}, 0) = COALESCE(${ingredientStats.totalCount}, 0)`,
+            sql`COALESCE(${ingredientStats.totalCount}, 0) > 0`
+          )
+        );
+      totalCount100Percent = totalResult[0]?.value ?? 0;
+    } else {
+      // Если ingredientIds не предоставлены, totalCount100Percent будет 0
+      totalCount100Percent = 0;
+    }
+
+    return {
+      recipes: recipesResult,
+      total: totalCount100Percent,
     };
+  },
+
+  /**
+   * @description Сверхбыстрый метод для получения рецептов без фильтрации по ингредиентам.
+   * Использует покрывающий индекс для максимальной производительности.
+   */
+  async getRecipesFast(params: {
+    limit: number;
+    offset: number;
+    lang: string;
+    dietTagIds?: number[];
+    mealTypeIds?: number[];
+    kitchenIds?: number[];
+    search?: string;
+    searchType?: 'simple' | 'fulltext';
+  }): Promise<{ recipes: FastRecipeListResponse[]; total: number }> {
+    const {
+      limit,
+      offset,
+      lang,
+      dietTagIds,
+      mealTypeIds,
+      kitchenIds,
+      search,
+      searchType = 'simple',
+    } = params;
+
+    const tagConditions = buildTagFilterConditions(
+      dietTagIds,
+      mealTypeIds,
+      kitchenIds
+    );
 
     // Базовые условия
     let baseConditions = [eq(recipes.lang, lang), ...tagConditions];
@@ -282,164 +257,47 @@ export const recipeStorage = {
       }
     }
 
-    // Если нет ингредиентов
-    if (!ingredientIds?.length) {
-      // Один запрос с оконной функцией
-      const recipesResult = await db
-        .select({
-          ...selectFields,
-          matchedCount: sql<number>`0`.as('matchedCount'),
-          totalCount: sql<number>`0`.as('totalCount'),
-          matchPercentage: sql<number>`0`.as('matchPercentage'),
-          total: sql<number>`count(*) OVER()`.as('total'),
-        })
-        .from(recipes)
-        .where(and(...baseConditions))
-        .orderBy(desc(recipes.id))
-        .limit(limit)
-        .offset(offset);
-
-      return {
-        recipes: recipesResult,
-        total: recipesResult.length > 0 ? recipesResult[0].total : 0,
-      };
-    }
-
-    // Если есть ингредиенты - добавляем подсчёт совпадений
-    const ingredientStats = db
-      .select({
-        recipeId: recipeIngredients.recipeId,
-        matchedCount: count(
-          sql`CASE WHEN ${inArray(recipeIngredients.ingredientId, ingredientIds)} THEN 1 END`
-        ).as('matched_count'),
-        totalCount: count(recipeIngredients.ingredientId).as('total_count'),
-      })
-      .from(recipeIngredients)
-      .groupBy(recipeIngredients.recipeId)
-      .as('ingredient_stats');
-
-    const matchPercentage = sql<number>`ROUND((${ingredientStats.matchedCount} * 100.0) / NULLIF(${ingredientStats.totalCount}, 0))`;
-
-    // Основной запрос (сортировка по проценту совпадения)
+    // Оптимизированный запрос с покрывающим индексом
     const recipesResult = await db
       .select({
-        ...selectFields,
-        matchedCount:
-          sql<number>`COALESCE(${ingredientStats.matchedCount}, 0)`.as(
-            'matchedCount'
-          ),
-        totalCount: sql<number>`COALESCE(${ingredientStats.totalCount}, 0)`.as(
-          'totalCount'
-        ),
-        matchPercentage: sql<number>`COALESCE(${matchPercentage}, 0)`.as(
-          'matchPercentage'
-        ),
+        id: recipes.id,
+        title: recipes.title,
+        prepTime: recipes.prepTime,
+        rating: recipes.rating,
+        imageUrl: recipes.imageUrl,
+        sourceUrl: recipes.sourceUrl,
+        matchedCount: sql<number>`0`.as('matchedCount'),
+        matchPercentage: sql<number>`0`.as('matchPercentage'),
+        total: sql<number>`count(*) OVER()`.as('total'),
       })
       .from(recipes)
-      .leftJoin(ingredientStats, eq(recipes.id, ingredientStats.recipeId))
-      .where(
-        and(
-          ...baseConditions,
-          sql`COALESCE(${ingredientStats.matchedCount}, 0) > 0`,
-          sql`COALESCE(${ingredientStats.totalCount}, 0) > 0`
-        )
-      )
-      .orderBy(desc(matchPercentage), desc(recipes.id))
+      .where(and(...baseConditions))
+      .orderBy(desc(recipes.id))
       .limit(limit)
       .offset(offset);
 
-    // Отдельный запрос для total: только рецепты с 100% совпадением
-    const totalResult = await db
-      .select({ value: count() })
-      .from(recipes)
-      .leftJoin(ingredientStats, eq(recipes.id, ingredientStats.recipeId))
-      .where(
-        and(
-          ...baseConditions,
-          sql`COALESCE(${ingredientStats.matchedCount}, 0) = COALESCE(${ingredientStats.totalCount}, 0)`,
-          sql`COALESCE(${ingredientStats.totalCount}, 0) > 0`
-        )
-      );
-    const total = totalResult[0]?.value ?? 0;
-
     return {
       recipes: recipesResult,
-      total,
+      total: recipesResult.length > 0 ? recipesResult[0].total : 0,
     };
   },
 
   /**
-   * Поиск рецептов, где все ингредиенты рецепта содержатся в списке пользователя (user covers recipe)
+   * @description Метод для получения рецептов с предварительно вычисленной статистикой ингредиентов.
+   * Использует материализованное представление или кэшированные результаты.
    */
-  async findRecipesUserCoversAll(
-    userIngredientIds: number[],
-    limit: number,
-    offset: number,
-    lang: string,
-    dietTagIds?: number[],
-    mealTypeIds?: number[],
-    kitchenIds?: number[]
-  ): Promise<FastRecipeListResponse[]> {
-    if (!userIngredientIds.length) return [];
-    const tagConditions = buildTagFilterConditions(
-      dietTagIds,
-      mealTypeIds,
-      kitchenIds
-    );
-    const selectFields = {
-      id: recipes.id,
-      title: recipes.title,
-      description: recipes.description,
-      prepTime: recipes.prepTime,
-      rating: recipes.rating,
-      difficulty: recipes.difficulty,
-      imageUrl: recipes.imageUrl,
-      instructions: recipes.instructions,
-      lang: recipes.lang,
-      sourceUrl: recipes.sourceUrl,
-      supercookId: recipes.supercookId,
-      createdAt: recipes.createdAt,
-      viewed: recipes.viewed,
-    };
-    // Для каждого рецепта считаем, сколько его ингредиентов есть у пользователя
-    // и сравниваем с общим числом ингредиентов в рецепте
-    const subquery = db
-      .select({
-        recipeId: recipeIngredients.recipeId,
-        matchedCount: count(
-          sql`CASE WHEN ${inArray(recipeIngredients.ingredientId, userIngredientIds)} THEN 1 END`
-        ).as('matched_count'),
-        totalCount: count(recipeIngredients.ingredientId).as('total_count'),
-      })
-      .from(recipeIngredients)
-      .groupBy(recipeIngredients.recipeId)
-      .as('subquery');
-    const matchPercentage = sql<number>`ROUND((${subquery.matchedCount} * 100.0) / NULLIF(${subquery.totalCount}, 0))`;
-
-    return db
-      .select({
-        ...selectFields,
-        matchedCount: sql<number>`COALESCE(${subquery.matchedCount}, 0)`.as(
-          'matchedCount'
-        ),
-        totalCount: sql<number>`COALESCE(${subquery.totalCount}, 0)`.as(
-          'totalCount'
-        ),
-        matchPercentage: sql<number>`COALESCE(${matchPercentage}, 0)`.as(
-          'matchPercentage'
-        ),
-      })
-      .from(recipes)
-      .innerJoin(subquery, eq(recipes.id, subquery.recipeId))
-      .where(
-        and(
-          eq(recipes.lang, lang),
-          sql`${subquery.matchedCount} = ${subquery.totalCount}`,
-          ...tagConditions
-        )
-      )
-      .orderBy(desc(recipes.id))
-      .limit(limit)
-      .offset(offset);
+  async getRecipesWithCachedStats(params: {
+    ingredientIds?: number[];
+    limit: number;
+    offset: number;
+    lang: string;
+    dietTagIds?: number[];
+    mealTypeIds?: number[];
+    kitchenIds?: number[];
+    search?: string;
+  }): Promise<{ recipes: FastRecipeListResponse[]; total: number }> {
+    // TODO: Реализовать с использованием материализованного представления
+    // или кэшированных результатов для еще большей производительности
+    return this.getRecipesUniversal(params);
   },
 };

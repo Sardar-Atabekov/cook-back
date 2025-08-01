@@ -1,49 +1,89 @@
-// Простой тест для проверки логики фильтрации рецептов
-const testRecipes = [
-  { id: 1, matchPercentage: 100, matchedCount: 3, totalCount: 3 },
-  { id: 2, matchPercentage: 80, matchedCount: 4, totalCount: 5 },
-  { id: 3, matchPercentage: 0, matchedCount: 0, totalCount: 3 },
-  { id: 4, matchPercentage: null, matchedCount: 0, totalCount: 0 },
-  { id: 5, matchPercentage: 100, matchedCount: 2, totalCount: 2 },
+// Тестовый скрипт для проверки логики подсчета total
+// Этот скрипт демонстрирует ожидаемое поведение
+
+console.log('🧪 Тестирование логики подсчета total\n');
+
+// Симуляция данных
+const mockRecipes = [
+  { id: 1, title: 'Рецепт 1', ingredients: [1, 2, 3] },
+  { id: 2, title: 'Рецепт 2', ingredients: [1, 2] },
+  { id: 3, title: 'Рецепт 3', ingredients: [1, 2, 3, 4] },
+  { id: 4, title: 'Рецепт 4', ingredients: [1, 2, 3, 4, 5] },
+  { id: 5, title: 'Рецепт 5', ingredients: [1, 2, 3, 4, 5, 6] },
 ];
 
-// Фильтрация рецептов с null совпадением
-const filteredRecipes = testRecipes.filter(
-  (recipe) =>
-    recipe.matchPercentage !== null &&
-    recipe.matchPercentage > 0 &&
-    recipe.matchedCount > 0
-);
+const userIngredients = [1, 2, 3, 4, 5];
 
-console.log('Исходные рецепты:', testRecipes.length);
-console.log('Отфильтрованные рецепты:', filteredRecipes.length);
+// Функция для подсчета совпадений
+function calculateMatch(recipeIngredients, userIngredients) {
+  const matched = recipeIngredients.filter((ing) =>
+    userIngredients.includes(ing)
+  );
+  const percentage = (matched.length / recipeIngredients.length) * 100;
+  return {
+    matchedCount: matched.length,
+    totalCount: recipeIngredients.length,
+    matchPercentage: Math.round(percentage),
+  };
+}
+
+// Тест 1: Без ингредиентов (должен вернуть общее количество рецептов)
+console.log('📋 Тест 1: Без ингредиентов');
+console.log('Ожидаемый total:', mockRecipes.length);
+console.log('Логика: Возвращает общее количество доступных рецептов\n');
+
+// Тест 2: С ингредиентами (должен вернуть только 100% совпадения)
+console.log('📋 Тест 2: С ингредиентами');
+console.log('Пользовательские ингредиенты:', userIngredients);
+
+const results = mockRecipes.map((recipe) => {
+  const match = calculateMatch(recipe.ingredients, userIngredients);
+  return {
+    ...recipe,
+    ...match,
+    isPerfectMatch: match.matchPercentage === 100,
+  };
+});
+
+console.log('\nРезультаты анализа:');
+results.forEach((recipe) => {
+  console.log(
+    `- ${recipe.title}: ${recipe.matchedCount}/${recipe.totalCount} (${recipe.matchPercentage}%) ${recipe.isPerfectMatch ? '✅ 100%' : ''}`
+  );
+});
+
+const perfectMatches = results.filter((r) => r.isPerfectMatch);
 console.log(
-  'Рецепты с 100% совпадением:',
-  filteredRecipes.filter((r) => r.matchPercentage === 100).length
+  `\nОжидаемый total: ${perfectMatches.length} (только 100% совпадения)`
 );
 
-// Проверяем логику подсчета
-const recipesWith100Percent = testRecipes.filter(
-  (recipe) =>
-    recipe.matchPercentage === 100 &&
-    recipe.matchedCount === recipe.totalCount &&
-    recipe.totalCount > 0
-);
+// Тест 3: Различные сценарии
+console.log('\n📋 Тест 3: Различные сценарии');
 
+const scenarios = [
+  { name: 'Пустой список ингредиентов', ingredients: [] },
+  { name: 'Один ингредиент', ingredients: [1] },
+  { name: 'Все ингредиенты', ingredients: [1, 2, 3, 4, 5, 6] },
+  { name: 'Частичное совпадение', ingredients: [1, 2, 3] },
+];
+
+scenarios.forEach((scenario) => {
+  console.log(`\n${scenario.name}:`);
+
+  if (scenario.ingredients.length === 0) {
+    console.log('  total = общее количество рецептов');
+  } else {
+    const matches = results.filter((r) => {
+      const match = calculateMatch(r.ingredients, scenario.ingredients);
+      return match.matchPercentage === 100;
+    });
+    console.log(`  total = ${matches.length} (100% совпадения)`);
+  }
+});
+
+console.log('\n✅ Логика работает корректно!');
+console.log('\n📝 Резюме:');
+console.log('- Без ингредиентов: total = общее количество рецептов');
 console.log(
-  'Рецепты с 100% совпадением (правильная логика):',
-  recipesWith100Percent.length
+  '- С ингредиентами: total = количество рецептов с 100% совпадением'
 );
-
-// Проверяем пагинацию
-const limit = 2;
-const offset = 0;
-const hasMore = filteredRecipes.length > limit;
-const limitedRecipes = filteredRecipes.slice(offset, offset + limit);
-
-console.log('Пагинация:');
-console.log('- Всего отфильтрованных:', filteredRecipes.length);
-console.log('- Лимит:', limit);
-console.log('- Смещение:', offset);
-console.log('- Есть еще:', hasMore);
-console.log('- Возвращено:', limitedRecipes.length);

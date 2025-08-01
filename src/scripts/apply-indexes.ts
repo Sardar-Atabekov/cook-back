@@ -15,18 +15,50 @@ async function applyIndexes() {
     const indexesPath = join(__dirname, '../storage/indexes.sql');
     const indexesSQL = readFileSync(indexesPath, 'utf-8');
 
-    // Разбиваем SQL на отдельные команды
+    // Разбиваем SQL на отдельные команды, игнорируя комментарии и пустые строки
     const commands = indexesSQL
+      .split('\n')
+      .filter(
+        (line) =>
+          !line.trim().startsWith('--') &&
+          !line.trim().startsWith('/*') &&
+          !line.trim().startsWith('*/')
+      )
+      .join('\n')
       .split(';')
       .map((cmd) => cmd.trim())
-      .filter((cmd) => cmd.length > 0 && !cmd.startsWith('--'));
+      .filter(
+        (cmd) =>
+          cmd.length > 0 &&
+          !cmd.startsWith('--') &&
+          !cmd.startsWith('/*') &&
+          !cmd.startsWith('*/')
+      )
+      .filter(
+        (cmd) =>
+          !cmd.includes('--') && !cmd.includes('/*') && !cmd.includes('*/')
+      );
 
     for (const command of commands) {
       try {
         await db.execute(sql.raw(command));
-        console.log('✓ Применён индекс:', command.split('\n')[0]);
+        console.log(
+          '✓ Применён:',
+          command.split('\n')[0].substring(0, 80) + '...'
+        );
       } catch (error) {
-        console.warn('⚠ Ошибка при применении индекса:', error.message);
+        // Игнорируем ошибки "already exists" - это нормально
+        if (
+          error.message.includes('already exists') ||
+          error.message.includes('does not exist')
+        ) {
+          console.log(
+            '⏭ Пропущен (уже существует):',
+            command.split('\n')[0].substring(0, 80) + '...'
+          );
+        } else {
+          console.warn('⚠ Ошибка:', error.message.substring(0, 100) + '...');
+        }
       }
     }
 

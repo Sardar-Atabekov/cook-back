@@ -53,7 +53,7 @@ export async function getRecipes(req: Request, res: Response) {
       try {
         // Пробуем полнотекстовый поиск
         const result = await recipeStorage.getRecipesUniversal({
-          ingredientIds,
+          ingredientIds: ingredientIds.length > 0 ? ingredientIds : [],
           limit: parsedLimit + 1,
           offset: parsedOffset,
           lang,
@@ -73,9 +73,9 @@ export async function getRecipes(req: Request, res: Response) {
       }
     }
 
-    // Выполняем запрос
+    // Выполняем запрос - всегда используем getRecipesUniversal
     const result = await recipeStorage.getRecipesUniversal({
-      ingredientIds,
+      ingredientIds: ingredientIds.length > 0 ? ingredientIds : [],
       limit: parsedLimit + 1,
       offset: parsedOffset,
       lang,

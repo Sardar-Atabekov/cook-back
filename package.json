@@ -31,7 +31,11 @@
     "postinstall": "husky install",
     "test": "vitest",
     "db:push": "drizzle-kit push",
-    "db:indexes": "tsx src/scripts/apply-indexes.ts"
+    "db:indexes": "tsx src/scripts/apply-indexes.ts",
+    "db:basic-indexes": "tsx src/scripts/apply-basic-indexes.ts",
+    "apply-indexes": "tsx src/scripts/apply-indexes.ts",
+    "apply-basic-indexes": "tsx src/scripts/apply-basic-indexes.ts",
+    "optimize-db": "tsx src/scripts/apply-indexes.ts"
   },
   "dependencies": {
     "axios": "^1.10.0",
